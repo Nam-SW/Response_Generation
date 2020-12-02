@@ -88,8 +88,6 @@ def train_tokenizer(
     tokenizer.save(filename)
     print("tokenizer train and save at " + filename)
 
-    return tokenizer
-
 
 def load_tokenizer(filename):
     filename = os.path.abspath(filename)
