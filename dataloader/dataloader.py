@@ -36,6 +36,7 @@ class DataLoader:
 
         shuffled_context = list()
         shuffled_idx = list()
+        y = list()
         for i, L in enumerate(len_list):
             U = batch[i].copy()
             shuffle_idx = np.random.choice(utterance_idx)
@@ -46,8 +47,9 @@ class DataLoader:
             u_[:l] = nonzero
             shuffled_context.append(U)
             shuffled_idx.append(shuffle_idx)
+            y.append(batch[i, shuffle_idx])
 
-        return (tf.constant(shuffled_context), shuffled_idx), tf.constant(batch)
+        return (tf.constant(shuffled_context), shuffled_idx), tf.constant(y)
 
     def get_uor_data(self, batch):
         # TODO: implement

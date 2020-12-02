@@ -12,14 +12,10 @@ json_manager = utils.JsonManager(__file__)
 parser = argparse.ArgumentParser(
     description="build and training a DialogWithAuxility Model"
 )
-parser.add_argument(
-    "--data_hparams", default="{}", help="JSON dict of data hyperparameters."
-)
-parser.add_argument(
-    "--model_hparams", default="{}", help="JSON dict of model hyperparameters."
-)
-parser.add_argument("--load_data", default=True, help="load preprocessed data?")
-parser.add_argument("--load_model", default=True, help="load pretrained model?")
+parser.add_argument("--data_hparams", default="{}")
+parser.add_argument("--model_hparams", default="{}")
+parser.add_argument("--load_data", default=True)
+parser.add_argument("--load_model", default=True)
 args = parser.parse_args()
 
 data_hparams = json_manager.load(args.data_hparams)

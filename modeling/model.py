@@ -117,8 +117,9 @@ class DialogWithAuxility(tf.keras.Model):
             for i in range(self.utterance_size)
         ]
         E = self.concat(encoder_output)
-        q = encoder_output[shuffled_idx]
-        # TODO: 배치 학습 가능하게 해야함.
+        q = tf.concat(
+            [encoder_output[shuffled_idx[i]] for i in range(batch_size)], axis=0
+        )
 
         # decoder_attention = self.decoder_attention(q, k=E, v=E, training=training)[0]
         decoder_attention = self.decoder_attention(q, k=E, v=E)[0]
@@ -131,6 +132,7 @@ class DialogWithAuxility(tf.keras.Model):
         input_contexts,
         # training=False
     ):
+        # TODO: implement
         return None
 
     def call_masked_word_recovery(
@@ -154,18 +156,17 @@ class DialogWithAuxility(tf.keras.Model):
         ]
         E = self.concat(encoder_output)
         q = tf.concat(
-            [
-                encoder_output[masked_utterance_idx][:, tf.newaxis, i, :]
-                for i in masked_word_idxes
-            ],
-            axis=1,
+            [encoder_output[masked_utterance_idx[i]] for i in range(batch_size)], axis=0
         )
 
         # decoder_attention = self.decoder_attention(q, k=E, v=E, training=training)[0]
         decoder_attention = self.decoder_attention(q, k=E, v=E)[0]
         ffnn = self.FFNN(decoder_attention)
         output = self.output_layer(ffnn)
-        return output
+        output_masked = [
+            tf.gather(output[i], masked_word_idxes[i]) for i in range(batch_size)
+        ]
+        return output_masked
 
     def call_masked_utterance_recovery(
         self,
@@ -186,7 +187,9 @@ class DialogWithAuxility(tf.keras.Model):
             for i in range(self.utterance_size)
         ]
         E = self.concat(encoder_output)
-        q = encoder_output[masked_utterance_idx]
+        q = tf.concat(
+            [encoder_output[masked_utterance_idx[i]] for i in range(batch_size)], axis=0
+        )
 
         # decoder_attention = self.decoder_attention(q, k=E, v=E, training=training)[0]
         decoder_attention = self.decoder_attention(q, k=E, v=E)[0]
