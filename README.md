@@ -2,6 +2,9 @@
  implement NLP paper.
  
 [Learning a Simple and Effective Model for Multi-turn Response Generation with Auxiliary Tasks]
+[image1]
+[image2]
+
 
 ## 유의사항
  + Raw Data는 다음과 같은 형식으로, utf-8 인코딩으로 저장되어야 합니다.
@@ -53,3 +56,5 @@ $ python3 run_model_training.py \
 ```
 
 [Learning a Simple and Effective Model for Multi-turn Response Generation with Auxiliary Tasks]: https://arxiv.org/abs/2004.01972
+[image1]: https://d3i71xaburhd42.cloudfront.net/7049707591d3bbf79e8826bb29e7dc00389b3365/3-Figure1-1.png
+[image2]: https://d3i71xaburhd42.cloudfront.net/7049707591d3bbf79e8826bb29e7dc00389b3365/4-Figure2-1.png
