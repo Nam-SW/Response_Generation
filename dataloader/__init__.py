@@ -1,11 +1,22 @@
 from math import ceil
+from os.path import abspath
 
 import numpy as np
 import tensorflow as tf
 
+from .preprocessing import load_data
+
 
 class DataLoader:
-    def __init__(self, contexts, response, Y, batch_size=32, shuffle=True, mask_ids=4):
+    def __init__(
+        self,
+        contexts: np.ndarray,
+        response: np.ndarray,
+        Y: np.ndarray,
+        batch_size=32,
+        shuffle=True,
+        mask_ids=4,
+    ):
         self.contexts = contexts
         self.response = response
         self.Y = Y
@@ -130,3 +141,19 @@ class DataLoader:
             }
 
             yield data_dict
+
+
+def get_dataloader(
+    data_dir: str,
+    validation_split: float,
+    batch_size=32,
+    shuffle=True,
+    mask_ids=4,
+):
+    data_dir = abspath(data_dir)
+    train, test = load_data(data_dir, validation_split)
+
+    train_dataloader = DataLoader(*train, batch_size, shuffle, mask_ids)
+    test_dataloader = DataLoader(*test, batch_size, shuffle, mask_ids)
+
+    return train_dataloader, test_dataloader
