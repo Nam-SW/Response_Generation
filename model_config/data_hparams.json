@@ -1,7 +1,0 @@
-{
-    "limit_alphabet": 6000,
-    "vocab_size": 8000,
-    "utterance_size": 4,
-    "max_len": 100,
-    "use_multiprocessing": true
-}

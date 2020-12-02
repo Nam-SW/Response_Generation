@@ -128,3 +128,4 @@ dmypy.json
 
 # custom
 data/
+config/remove_names.json

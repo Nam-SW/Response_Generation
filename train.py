@@ -11,3 +11,5 @@ class TrainManager:
 
     def train(self, train_data, validation_data=None):
         pass
+
+    # TODO: implement
