@@ -3,7 +3,6 @@
  
 [Learning a Simple and Effective Model for Multi-turn Response Generation with Auxiliary Tasks]  
 ![image1]  
-![image2]  
 
 
 ## 유의사항
