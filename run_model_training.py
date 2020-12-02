@@ -1,45 +1,43 @@
 import argparse
 
-import utils
-
-from preprocessing.preprocessing import get_data
-from preprocessing.tokenizer import get_tokenizer
-from modeling.training import model_training, model_evaluate
+from utils import JsonManager
+from dataloader import get_dataloader
 
 
-json_manager = utils.JsonManager(__file__)
+if __name__ == "__main__":
+    json_manager = JsonManager(__file__)
 
-parser = argparse.ArgumentParser(
-    description="build and training a DialogWithAuxility Model"
-)
-parser.add_argument("--data_hparams", default="{}")
-parser.add_argument("--model_hparams", default="{}")
-parser.add_argument("--load_data", default=True)
-parser.add_argument("--load_model", default=True)
-args = parser.parse_args()
+    parser = argparse.ArgumentParser(
+        description="build and training a DialogWithAuxility Model"
+    )
+    parser.add_argument("--data_dir")
+    parser.add_argument("--validation_split", default=0.2)
+    parser.add_argument("--data_shuffle", default=True)
 
-data_hparams = json_manager.load(args.data_hparams)
-model_hparams = json_manager.load(args.model_hparams)
-load_data = (args.load_data.lower()) == "true"
-load_model = (args.load_model.lower()) == "true"
+    parser.add_argument("--model_save_dir", default="model")
+    parser.add_argument("--learning_rate", default=0.0001)
+    parser.add_argument("--batch_size", default=80)
+    parser.add_argument("--epochs", default=5)
+    parser.add_argument("--verbose", default=1)
+    parser.add_argument("--model_hparams")
+    args = parser.parse_args()
 
+    data_dir = args.data_dir
+    validation_split = float(args.validation_split)
+    data_shuffle = (args.data_shuffle.lower()) == "true"
 
-data_hparams["tokenizer"] = get_tokenizer(
-    data_hparams["limit_alphabet"],
-    data_hparams["vocab_size"],
-    load_data,
-    data_hparams.get("additional_special_tokens", None),
-)
+    model_save_dir = args.model_save_dir
+    learning_rate = float(args.learning_rate)
+    batch_size = int(args.batch_size)
+    epochs = int(args.epochs)
+    verbose = int(args.verbose)
+    model_hparams = json_manager.load(args.model_hparams)
 
-train_data, test_data = get_data(
-    load_data,
-    data_hparams["utterance_size"],
-    data_hparams["max_len"],
-    data_hparams["tokenizer"],
-    data_hparams["use_multiprocessing"],
-)
+    train_dataloader, test_dataloader = get_dataloader(
+        data_dir,
+        validation_split,
+        batch_size,
+        data_shuffle,
+    )
 
-model = model_training(train_data, model_hparams, load=load_model)
-model_evaluate(test_data, model)
-
-model.save_weight("model_weight.h5")
+    # TODO: training implement
