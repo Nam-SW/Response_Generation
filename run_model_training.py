@@ -2,6 +2,30 @@ import argparse
 
 from utils import JsonManager
 from dataloader import get_dataloader
+from train import TrainManager
+from modeling.model import DialogWithAuxility
+
+
+def main(args, model_hparams):
+    train_dataloader, test_dataloader = get_dataloader(
+        args.data_dir,
+        float(args.validation_split),
+        int(args.batch_size),
+        (args.data_shuffle.lower()) == "true",
+    )
+
+    model = DialogWithAuxility(**model_hparams)
+
+    trainer = TrainManager(model)
+    trainer.compile(float(args.learning_rate))
+    trainer.train(
+        train_dataloader,
+        test_dataloader,
+        model_save_dir=args.model_save_dir,
+        tensorboard_log_dir=args.tensorboard_log_dir,
+        epochs=int(args.epochs),
+        verbose=int(args.verbose),
+    )
 
 
 if __name__ == "__main__":
@@ -15,6 +39,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_shuffle", default=True)
 
     parser.add_argument("--model_save_dir", default="model")
+    parser.add_argument("--tensorboard_log_dir", default="logs")
     parser.add_argument("--learning_rate", default=0.0001)
     parser.add_argument("--batch_size", default=80)
     parser.add_argument("--epochs", default=5)
@@ -22,22 +47,5 @@ if __name__ == "__main__":
     parser.add_argument("--model_hparams")
     args = parser.parse_args()
 
-    data_dir = args.data_dir
-    validation_split = float(args.validation_split)
-    data_shuffle = (args.data_shuffle.lower()) == "true"
-
-    model_save_dir = args.model_save_dir
-    learning_rate = float(args.learning_rate)
-    batch_size = int(args.batch_size)
-    epochs = int(args.epochs)
-    verbose = int(args.verbose)
     model_hparams = json_manager.load(args.model_hparams)
-
-    train_dataloader, test_dataloader = get_dataloader(
-        data_dir,
-        validation_split,
-        batch_size,
-        data_shuffle,
-    )
-
-    # TODO: training implement
+    main(args, model_hparams)

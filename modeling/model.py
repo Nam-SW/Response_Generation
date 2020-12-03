@@ -230,7 +230,7 @@ class DialogWithAuxility(tf.keras.Model):
     #         ),
     #     )
 
-    def call(self, data: Tuple, training=False):
+    def call(self, data: Tuple, return_all_sequences=False):
         (
             input_contexts,
             input_response,
@@ -264,7 +264,7 @@ class DialogWithAuxility(tf.keras.Model):
             # training=training,
         )[0]
 
-        if training:
+        if return_all_sequences:
             decoder_attention = []
             for i in range(1, get_shape(response_encoder_output)[1]):
                 E = self.concat(

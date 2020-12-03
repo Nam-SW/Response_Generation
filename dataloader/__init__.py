@@ -25,7 +25,6 @@ class DataLoader:
         self.mask_ids = mask_ids
 
         self.utterance_size = self.contexts.shape[1]
-        # self.max_len = self.contexts.shape[2]
 
         self.end_of_epoch()
 
@@ -141,6 +140,10 @@ class DataLoader:
             }
 
             yield data_dict
+
+    def load_train_data(self):
+        for mle, auxiliary in zip(self.MLE_Task(), self.Auxiliary_Task()):
+            yield mle, auxiliary
 
 
 def get_dataloader(
