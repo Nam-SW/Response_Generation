@@ -43,7 +43,7 @@ def setup_tokenizer_train_data(data_dir: str, remove_names: List[str]):
 
     all_df.dropna(inplace=True)
     all_df.reset_index(inplace=True, drop=True)
-    all_df["contents"] = all_df["contents"].apply(lambda x: filtering(x))
+    all_df["contents"] = all_df["contents"].apply(filtering)
     all_df["contents"] = all_df["contents"].str.replace(remove_names, "[NAME]")
     all_df = all_df[
         (all_df["contents"].str.len() < 70) & (all_df["contents"].str.len() >= 5)
@@ -52,7 +52,7 @@ def setup_tokenizer_train_data(data_dir: str, remove_names: List[str]):
     filename = os.path.join(data_dir, "tokenizer_train_data.txt")
     with open(filename, "w", encoding="utf-8") as f:
         for line in all_df["contents"]:
-            f.write(line + "\n")
+            f.write(line.strip() + " \n")
 
 
 def train_tokenizer(
