@@ -7,14 +7,5 @@
     "attention_head": 4,
     "encoder_block": 4,
     "dropout_rate": 0.1,
-    "FFNN_size": 512,
-    "learning_rate": 0.0001,
-    "EarlyStopping_patience": 5,
-    "ReduceLROnPlateau_factor": 0.2,
-    "ReduceLROnPlateau_patience": 3,
-    "checkpoint_path": "best_model_weight.h5",
-    "batch_size": 256,
-    "epochs": 50,
-    "validation_split": 0.1,
-    "verbose": 1
+    "FFNN_size": 512
 }
