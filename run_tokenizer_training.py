@@ -23,6 +23,7 @@ if __name__ == "__main__":
     data_dir = args.data_dir
     save_dir = args.save_dir
 
+    print(f"train tokenizer - vocab_size: {vocab_size}")
     train_tokenizer(
         limit_alphabet=limit_alphabet,
         vocab_size=vocab_size,
