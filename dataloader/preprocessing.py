@@ -21,9 +21,10 @@ def preprocessing(df: pd.DataFrame, remove_names: List[str], tokenizer):
 
     df["writer"] = df["writer"].apply(lambda x: writer_dict[x])
     df["contents_original"] = df["contents"]
+    df["contents"] = df["contents"].apply(lambda x: x.strip() + " ")
     df["contents"] = df["contents"].str.replace(r"사진 \d+장", "사진")
     df["contents"] = df["contents"].str.replace(r"^이모티콘 (?=\w+)", "")
-    df["contents"] = df["contents"].apply(lambda x: filtering(x))
+    df["contents"] = df["contents"].apply(filtering)
     df["contents"] = df["contents"].str.replace(remove_names, "[NAME]")
     df = df[df["contents"].str.len() >= 5]
     df.reset_index(inplace=True, drop=True)
@@ -66,6 +67,7 @@ def save_data(params: Tuple[pd.DataFrame, int, str]):
             temp_dict["content"] = initial_content.copy()
             temp_dict["last_original"] = ""
 
+        temp_dict["content"] += row["ids"]
         temp_dict["last_original"] += row["contents_original"]
         temp_dict["writer"] = row["writer"]
 
