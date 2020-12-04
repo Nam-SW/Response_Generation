@@ -104,9 +104,8 @@ def get_preprocessed_data(
         for f in os.listdir(raw_data_dir)
         if f.endswith(".csv")
     ]
-    # TODO: with 구문에서 빠져나오질 못함
     if use_multiprocessing:
-        with Pool(cpu_count() // 2) as p:
+        with Pool(cpu_count()) as p:
             data = p.map(
                 save_data,
                 [
@@ -218,10 +217,10 @@ def setup_data(
     use_multiprocessing: bool = True,
 ):
     raw_data_dir = os.path.abspath(raw_data_dir)
-    if os.path.isdir(preprocessed_data_dir):
+    if not os.path.isdir(preprocessed_data_dir):
         os.mkdir(preprocessed_data_dir)
     preprocessed_data_dir = os.path.abspath(preprocessed_data_dir)
-    if os.path.isdir(model_use_data_dir):
+    if not os.path.isdir(model_use_data_dir):
         os.mkdir(model_use_data_dir)
     model_use_data_dir = os.path.abspath(model_use_data_dir)
     remove_names = "|".join(remove_names)

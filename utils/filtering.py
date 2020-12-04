@@ -1,3 +1,5 @@
+import re
+
 from konlpy.tag import Okt
 from soynlp.normalizer import repeat_normalize
 
