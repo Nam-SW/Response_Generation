@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tqdm import tqdm
 
-from dataloader.utils import filtering
+from utils.filtering import filtering
 from tokenizer import load_tokenizer
 
 

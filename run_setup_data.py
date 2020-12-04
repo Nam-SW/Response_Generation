@@ -1,7 +1,7 @@
 import argparse
 
 from dataloader.preprocessing import setup_data
-from utils import JsonManager
+from utils.JsonManager import JsonManager
 
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 import argparse
 
-from utils import JsonManager
 from dataloader import get_dataloader
-from train import TrainManager
 from modeling.model import DialogWithAuxility
+from utils.JsonManager import JsonManager
+from utils.TrainManager import TrainManager
 
 
 def main(args, model_hparams):

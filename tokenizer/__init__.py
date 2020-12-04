@@ -4,7 +4,7 @@ from typing import List
 import pandas as pd
 from tokenizers import BertWordPieceTokenizer, Tokenizer
 
-from utils import filtering
+from utils.filtering import filtering
 
 
 special_tokens = [

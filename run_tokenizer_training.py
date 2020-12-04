@@ -1,8 +1,7 @@
 import argparse
 
 from tokenizer import train_tokenizer
-
-from utils import JsonManager
+from utils.JsonManager import JsonManager
 
 
 if __name__ == "__main__":

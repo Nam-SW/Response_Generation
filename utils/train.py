@@ -193,5 +193,3 @@ class TrainManager:
         with self.valid_summary_writter.as_default():
             for key, value in self.valid_metrics.items():
                 tf.summary.scalar(key, value.result(), epoch)
-
-    # TODO: implement
