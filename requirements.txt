@@ -1,6 +1,5 @@
 konlpy==0.5.2
 matplotlib==3.2.2
-nltk==3.2.5
 numpy==1.18.5
 pandas==1.1.4
 scikit-learn==0.22.2.post1
@@ -18,8 +17,4 @@ tensorflow-metadata==0.25.0
 tensorflow-privacy==0.2.2
 tensorflow-probability==0.11.0
 tokenizers==0.9.4
-torch==1.7.0
-torchsummary==1.5.1
-torchtext==0.3.1
-torchvision==0.8.1
 tqdm==4.41.1
