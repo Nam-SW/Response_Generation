@@ -204,6 +204,8 @@ def _save_whole_data(model_use_data_dir: str, context, response, y):
     np.save(response_fname, response)
     np.save(y_fname, y)
 
+    print("save model use data at " + model_use_data_dir)
+
 
 def setup_data(
     raw_data_dir: str,
@@ -216,7 +218,11 @@ def setup_data(
     use_multiprocessing: bool = True,
 ):
     raw_data_dir = os.path.abspath(raw_data_dir)
+    if os.path.isdir(preprocessed_data_dir):
+        os.mkdir(preprocessed_data_dir)
     preprocessed_data_dir = os.path.abspath(preprocessed_data_dir)
+    if os.path.isdir(model_use_data_dir):
+        os.mkdir(model_use_data_dir)
     model_use_data_dir = os.path.abspath(model_use_data_dir)
     remove_names = "|".join(remove_names)
     tokenizer_config = os.path.abspath(tokenizer_config)
