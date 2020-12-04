@@ -55,7 +55,7 @@ class TrainManager:
     ):
         assert self.optimizer is not None, "model must be compiled before training."
 
-        self.init_training_hparams(train_dataloader.get_length(), epochs)
+        self.init_training_hparams(len(train_dataloader), epochs)
 
         model_save_dir = os.path.abspath(model_save_dir)
         if os.path.isdir(model_save_dir):
@@ -76,18 +76,18 @@ class TrainManager:
             if verbose:
                 print(f"{epoch + 1}/{epochs} epochs...")
 
-            train_data_generator = train_dataloader.load_train_data()
-            valid_data_generator = test_dataloader.load_train_data()
+            train_data_generator = train_dataloader.load_data()
+            valid_data_generator = test_dataloader.load_data()
             if verbose:
                 train_data_generator = tqdm(train_data_generator)
                 valid_data_generator = tqdm(valid_data_generator)
 
             # TODO: 여기 어딘가에서 에러가 남. 왜지
             for batch in train_data_generator:
-                self._train_batch(batch, training=True)
+                self._train_batch(batch, self.alpha > 0, training=True)
 
             for batch in valid_data_generator:
-                self._train_batch(batch, training=False)
+                self._train_batch(batch, self.alpha > 0, training=False)
 
             if verbose:
                 for key, value in self.train_metrics.items():
@@ -162,7 +162,9 @@ class TrainManager:
 
         if training:
             gradient = tape.gradient(adversarial_loss, self.model.trainable_variables)
-            self.model.apply_gradients(zip(gradient, self.model.trainable_variables))
+            self.optimizer.apply_gradients(
+                zip(gradient, self.model.trainable_variables)
+            )
 
             self.train_metrics["adversarial_loss"].update_state(adversarial_loss)
             self.train_metrics["MLE_loss"].update_state(mle_loss)

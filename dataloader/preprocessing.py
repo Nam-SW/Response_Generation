@@ -189,7 +189,7 @@ def get_data(
         new_data["response"].to_list(), max_len, truncating="post", padding="post"
     )
     y = pad_sequences(
-        new_data["y"].to_list(), max_len, truncating="post", padding="post"
+        new_data["y"].to_list(), max_len - 1, truncating="post", padding="post"
     )
 
     return context, response, y

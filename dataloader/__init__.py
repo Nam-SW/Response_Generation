@@ -37,9 +37,6 @@ class DataLoader:
             self.response = self.response[s]
             self.Y = self.Y[s]
 
-    def get_length(self):
-        return ceil(len(self.Y) / self.batch_size)
-
     def get_wor_data(self, batch):
         len_list = np.count_nonzero(batch, axis=-1)
         utterance_idx = [*range(self.utterance_size)]
@@ -109,7 +106,7 @@ class DataLoader:
         return (tf.constant(masked_context), masked_utterance_idx), tf.constant(Y)
 
     def MLE_Task(self):
-        for i in range(self.get_length()):
+        for i in range(len(self)):
             idx = [*range(i * self.batch_size, (i + 1) * self.batch_size)]
             contexts = tf.constant(self.contexts[idx])
             response = tf.constant(self.response[idx])
@@ -120,7 +117,7 @@ class DataLoader:
     def Auxiliary_Task(self):
         task_names = ["wor", "uor", "mwr", "mur"]
 
-        for i in range(self.get_length()):
+        for i in range(len(self)):
             idx = [*range(i * self.batch_size, (i + 1) * self.batch_size)]
             contexts = self.contexts[idx]
 
@@ -141,9 +138,12 @@ class DataLoader:
 
             yield data_dict
 
-    def load_train_data(self):
+    def load_data(self):
         for mle, auxiliary in zip(self.MLE_Task(), self.Auxiliary_Task()):
             yield mle, auxiliary
+
+    def __len__(self):
+        return ceil(len(self.Y) / self.batch_size)
 
 
 def get_dataloader(

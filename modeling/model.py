@@ -197,39 +197,6 @@ class DialogWithAuxility(tf.keras.Model):
         output = self.output_layer(ffnn)
         return output
 
-    # def call_auxiliary_tasks(
-    #     self,
-    #     info_dict: Dict,
-    #     input_contexts,
-    #     # training=False
-    # ):
-    #     assert set(info_dict.keys()) == {
-    #         "wor_shuffled_idx",
-    #         "mwr_masked_utterance_idx",
-    #         "mwr_masked_idxes",
-    #         "mur_masked_utterance_idx",
-    #     }, "argument is not required."
-
-    #     return (
-    #         self.call_word_order_recovery(
-    #             shuffled_idx=info_dict["wor_shuffled_idx"],
-    #             input_contexts=input_contexts,
-    #             # training=training,
-    #         ),
-    #         # self.call_utterance_order_recovery(input_contexts, token_type_ids, training=training),
-    #         self.call_masked_word_recovery(
-    #             masked_utterance_idx=info_dict["mwr_masked_utterance_idx"],
-    #             masked_idxes=info_dict["mwr_masked_idxes"],
-    #             input_contexts=input_contexts,
-    #             # training=training,
-    #         ),
-    #         self.call_masked_utterance_recovery(
-    #             masked_utterance_idx=info_dict["mur_masked_utterance_idx"],
-    #             input_contexts=input_contexts,
-    #             # training=training,
-    #         ),
-    #     )
-
     def call(self, data: Tuple, return_all_sequences=False):
         (
             input_contexts,
@@ -296,35 +263,6 @@ class DialogWithAuxility(tf.keras.Model):
         output = self.output_layer(decoder_FFNN)
 
         return output
-
-    def convert_dict_to_tuple(self, dict_data: Dict):
-        kw = dict_data.keys()
-
-        # 변수 할당
-        assert "input_contexts" in kw, "input_contexts  must require."
-        input_contexts = dict_data["input_contexts"]
-        assert "input_response" in kw, "input_response  must require."
-        input_response = dict_data["input_response"]
-
-        contexts_token_type_ids = dict_data.get("contexts_token_type_ids", None)
-        response_token_type_ids = dict_data.get("response_token_type_ids", None)
-        training = dict_data.get("training", False)
-
-        return (
-            input_contexts,
-            input_response,
-            contexts_token_type_ids,
-            response_token_type_ids,
-            training,
-        )
-
-    def predict(self, data: Dict):
-        data = self.convert_dict_to_tuple(data)
-
-        return super().predict(data)
-
-    # def _repeats(tensor, repeats, axis):
-    #     return repeat(tensor, repeats=repeats, axis=axis)
 
     def get_config(self):
         config = {
