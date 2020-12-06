@@ -6,7 +6,7 @@
 
 
 ## 유의사항
- + Raw Data는 다음과 같은 형식으로, utf-8 인코딩으로 저장되어야 합니다.
+ + 학습에 사용되는 데이터는 1:1 채팅 데이터이며, 다음과 같은 형식으로 utf-8 인코딩으로 저장되어야 합니다.
    |         time        | writer |    contents   |
    |:-------------------:|:------:|:-------------:|
    | 2020-01-01 00:01:00 | user1  | 새해다 새해   |
@@ -47,7 +47,7 @@ $ python3 run_model_training.py \
   --validation_split 0.1 \
   --data_shuffle True \
   --model_save_dir model \
-  --learning_rate 0.0001 \
+  --learning_rate 0.05 \
   --batch_size 80 \
   --epochs 5 \
   --verbose 1 \
