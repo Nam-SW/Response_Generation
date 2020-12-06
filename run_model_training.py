@@ -17,7 +17,7 @@ def main(args, model_hparams):
 
     strategy = MirroredStrategy()
 
-    with strategy:
+    with strategy.scope():
         trainer = TrainManager(model_hparams)
         trainer.compile(float(args.learning_rate))
         trainer.train(
