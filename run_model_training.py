@@ -1,6 +1,6 @@
 import argparse
 
-from tensorflow.distribute import MirroredStrategy
+# from tensorflow.distribute import MirroredStrategy
 
 from dataloader import get_dataloader
 from utils.JsonManager import JsonManager
@@ -15,19 +15,19 @@ def main(args, model_hparams):
         (args.data_shuffle.lower()) == "true",
     )
 
-    strategy = MirroredStrategy()
+    # strategy = MirroredStrategy()
 
-    with strategy.scope():
-        trainer = TrainManager(model_hparams)
-        trainer.compile(float(args.learning_rate))
-        trainer.train(
-            train_dataloader,
-            test_dataloader,
-            model_save_dir=args.model_save_dir,
-            tensorboard_log_dir=args.tensorboard_log_dir,
-            epochs=int(args.epochs),
-            verbose=int(args.verbose),
-        )
+    # with strategy.scope():
+    trainer = TrainManager(model_hparams)
+    trainer.compile(float(args.learning_rate))
+    trainer.train(
+        train_dataloader,
+        test_dataloader,
+        model_save_dir=args.model_save_dir,
+        tensorboard_log_dir=args.tensorboard_log_dir,
+        epochs=int(args.epochs),
+        verbose=int(args.verbose),
+    )
 
 
 if __name__ == "__main__":

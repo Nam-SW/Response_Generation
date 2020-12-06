@@ -112,6 +112,7 @@ class TrainManager:
             train_dataloader.end_of_epoch()
             test_dataloader.end_of_epoch()
 
+    @tf.function
     def _train_batch(
         self,
         data: Tuple,
