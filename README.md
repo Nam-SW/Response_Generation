@@ -47,7 +47,7 @@ $ python3 run_model_training.py \
   --validation_split 0.1 \
   --data_shuffle True \
   --model_save_dir model \
-  --learning_rate 0.0001 \
+  --learning_rate 0.05 \
   --batch_size 80 \
   --epochs 5 \
   --verbose 1 \
