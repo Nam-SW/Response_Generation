@@ -1,15 +1,16 @@
 import os
-
 from datetime import datetime as dt
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import tensorflow as tf
 from tqdm import tqdm
 
+from modeling.model import DialogWithAuxility
+
 
 class TrainManager:
-    def __init__(self, model, **kwargs):
-        self.model = model
+    def __init__(self, model_hparams: Dict, **kwargs):
+        self.model = DialogWithAuxility(**model_hparams)
         self.optimizer = None
 
         self.metrics_name = [
