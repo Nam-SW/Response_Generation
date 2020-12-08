@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Tuple
 
 import tensorflow as tf
 
@@ -53,7 +53,7 @@ class DialogWithAuxility(tf.keras.Model):
 
         self.FFNN = tf.keras.models.Sequential(
             layers=[
-                tf.keras.layers.Dense(self.FFNN_size, activation="linear"),
+                tf.keras.layers.Dense(self.hidden_size, activation="linear"),
                 tf.keras.layers.Dropout(self.dropout_rate),
                 tf.keras.layers.BatchNormalization(),
             ],
@@ -100,31 +100,16 @@ class DialogWithAuxility(tf.keras.Model):
 
     def call_word_order_recovery(
         self,
-        input_contexts,
-        shuffled_idx,
+        input_context,
         # training=False
     ):
-        batch_size = get_shape(input_contexts)[0]
-
-        contexts_token_type_ids = self.get_token_type_ids(batch_size)
-        encoder_output = [
-            self.call_encoder(
-                input_contexts[:, i],
-                contexts_token_type_ids[i],
-                self.attention_blocks,
-                # training=training,
-            )[0]
-            for i in range(self.utterance_size)
-        ]
-        E = self.concat(encoder_output)
-        q = tf.concat(
-            [encoder_output[shuffled_idx[i]] for i in range(batch_size)], axis=0
-        )
-
-        # decoder_attention = self.decoder_attention(q, k=E, v=E, training=training)[0]
-        decoder_attention = self.decoder_attention(q, k=E, v=E)[0]
-        ffnn = self.FFNN(decoder_attention)
-        output = self.output_layer(ffnn)
+        encoder_output = self.call_encoder(
+            input_context,
+            None,
+            self.attention_blocks,
+            # training=training,
+        )[0]
+        output = self.output_layer(encoder_output)
         return output
 
     def call_utterance_order_recovery(
@@ -135,11 +120,9 @@ class DialogWithAuxility(tf.keras.Model):
         # TODO: implement
         return None
 
-    def call_masked_word_recovery(
+    def call_masked_content_recovery(
         self,
         input_contexts,
-        masked_utterance_idx,
-        masked_word_idxes,
         # training=False,
     ):
         batch_size = get_shape(input_contexts)[0]
@@ -154,50 +137,12 @@ class DialogWithAuxility(tf.keras.Model):
             )[0]
             for i in range(self.utterance_size)
         ]
-        E = self.concat(encoder_output)
-        q = tf.concat(
-            [encoder_output[masked_utterance_idx[i]] for i in range(batch_size)], axis=0
-        )
+        E = tf.concat(encoder_output, axis=0)
 
-        # decoder_attention = self.decoder_attention(q, k=E, v=E, training=training)[0]
-        decoder_attention = self.decoder_attention(q, k=E, v=E)[0]
-        ffnn = self.FFNN(decoder_attention)
-        output = self.output_layer(ffnn)
-        output_masked = [
-            tf.gather(output[i], masked_word_idxes[i]) for i in range(batch_size)
-        ]
-        return output_masked
-
-    def call_masked_utterance_recovery(
-        self,
-        input_contexts,
-        masked_utterance_idx,
-        # training=False
-    ):
-        batch_size = get_shape(input_contexts)[0]
-
-        contexts_token_type_ids = self.get_token_type_ids(batch_size)
-        encoder_output = [
-            self.call_encoder(
-                input_contexts[:, i],
-                contexts_token_type_ids[i],
-                self.attention_blocks,
-                # training=training,
-            )[0]
-            for i in range(self.utterance_size)
-        ]
-        E = self.concat(encoder_output)
-        q = tf.concat(
-            [encoder_output[masked_utterance_idx[i]] for i in range(batch_size)], axis=0
-        )
-
-        # decoder_attention = self.decoder_attention(q, k=E, v=E, training=training)[0]
-        decoder_attention = self.decoder_attention(q, k=E, v=E)[0]
-        ffnn = self.FFNN(decoder_attention)
-        output = self.output_layer(ffnn)
+        output = self.output_layer(E)
         return output
 
-    def call(self, data: Tuple, return_all_sequences=False):
+    def call_MLE(self, data, return_all_sequences=False):
         (
             input_contexts,
             input_response,
@@ -263,6 +208,30 @@ class DialogWithAuxility(tf.keras.Model):
         output = self.output_layer(decoder_FFNN)
 
         return output
+
+    def call(
+        self,
+        data: Tuple,
+        return_all_sequences=False,
+        task="MLE",
+        # task: Literal["MLE", "WOR", "UOR", "MCR"] = "MLE",
+    ):
+        assert task in [
+            "MLE",
+            "WOR",
+            "UOR",
+            "MCR",
+        ], "task is Literal['MLE', 'WOR', 'UOR', 'MCR']"
+
+        if task == "MLE":
+            pred = self.call_MLE(data, return_all_sequences)
+        elif task == "WOR":
+            pred = self.call_word_order_recovery(data)
+        elif task == "UOR":
+            pred = self.call_utterance_order_recovery(data)
+        elif task == "MCR":
+            pred = self.call_masked_content_recovery(data)
+        return pred
 
     def get_config(self):
         config = {

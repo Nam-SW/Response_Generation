@@ -38,79 +38,55 @@ class DataLoader:
             self.Y = self.Y[s]
 
     def get_wor_data(self, batch):
-        len_list = np.count_nonzero(batch, axis=-1)
-        utterance_idx = [*range(self.utterance_size)]
+        shuffle_idx = np.random.choice([*range(self.utterance_size)], self.batch_size)
 
-        shuffled_context = list()
-        shuffled_idx = list()
-        y = list()
-        for i, L in enumerate(len_list):
-            U = batch[i].copy()
-            shuffle_idx = np.random.choice(utterance_idx)
-            u_, l = U[shuffle_idx], L[shuffle_idx]
-            nonzero = u_[:l]
-            np.random.shuffle(nonzero)
+        x = np.zeros((self.batch_size, batch.shape[-1]), dtype=np.int32)
+        y = np.zeros((self.batch_size, batch.shape[-1]), dtype=np.int32)
+        for i, s_i in enumerate(shuffle_idx):
+            temp = batch[i, s_i].copy()
+            length = np.count_nonzero(temp, axis=0)
+            ids = temp[:length]
+            np.random.shuffle(ids)
+            temp[:length] = ids
 
-            u_[:l] = nonzero
-            shuffled_context.append(U)
-            shuffled_idx.append(shuffle_idx)
-            y.append(batch[i, shuffle_idx])
+            x[i] = temp
+            y[i] = batch[i, s_i]
 
-        return (tf.constant(shuffled_context), shuffled_idx), tf.constant(y)
+        return x, y
 
     def get_uor_data(self, batch):
         # TODO: implement
         return (None, None)
 
     def get_mwr_data(self, batch):
-        len_list = np.count_nonzero(batch, axis=-1)
-        utterance_idx = [*range(self.utterance_size)]
-        mask_count = np.ceil(len_list * 0.15).astype(np.int32)
+        def masking(x):
+            length = np.count_nonzero(x)
+            mask_count = np.ceil(length * 0.15).astype(np.int32)
+            mask_w_idx = np.random.choice(np.arange(length), mask_count)
+            x[mask_w_idx] = self.mask_ids
 
-        masked_context = list()
-        masked_utterance_idx = list()
-        masked_word_idx = list()
-        Y = list()
-        for i, (L, N) in enumerate(zip(len_list, mask_count)):
-            U = batch[i].copy()
-            mask_u_idx = np.random.choice(utterance_idx)
-            u_, l, n = U[mask_u_idx], L[mask_u_idx], N[mask_u_idx]
+            return x
 
-            mask_w_idx = np.random.choice(np.arange(l), n)
-            u_[mask_w_idx] = self.mask_ids
-            y = batch[i, mask_u_idx, mask_w_idx]
+        x = np.apply_along_axis(masking, -1, batch.copy())
+        y = batch.copy()
 
-            masked_context.append(U)
-            masked_utterance_idx.append(mask_u_idx)
-            masked_word_idx.append(mask_w_idx)
-            Y.append(y)
-
-        return (tf.constant(masked_context), masked_utterance_idx, masked_word_idx), Y
+        return x, y
 
     def get_mur_data(self, batch):
-        utterance_idx = [*range(self.utterance_size)]
-
-        masked_context = list()
-        masked_utterance_idx = list()
-        Y = list()
+        x = batch.copy()
         for i in range(self.batch_size):
-            U = batch[i].copy()
-            mask_u_idx = np.random.choice(utterance_idx)
-            U[mask_u_idx] = self.mask_ids
-            y = batch[i, mask_u_idx]
+            idx = np.random.choice([*range(self.utterance_size)])
+            x[i, idx] = self.mask_ids
+        y = batch.copy()
 
-            masked_context.append(U)
-            masked_utterance_idx.append(mask_u_idx)
-            Y.append(y)
-
-        return (tf.constant(masked_context), masked_utterance_idx), tf.constant(Y)
+        return x, y
 
     def MLE_Task(self):
         for i in range(len(self)):
             idx = [*range(i * self.batch_size, (i + 1) * self.batch_size)]
-            contexts = tf.constant(self.contexts[idx])
-            response = tf.constant(self.response[idx])
-            Y = tf.constant(self.Y[idx])
+            contexts = self.contexts[idx]
+            response = self.response[idx]
+            Y = self.Y[idx]
 
             yield (contexts, response), Y
 

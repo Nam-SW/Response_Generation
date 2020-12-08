@@ -130,31 +130,20 @@ class TrainManager:
         MUR_loss = 0
 
         with tf.GradientTape() as tape:
-            mle_pred = self.model(mle_x, return_all_sequences=True, training=training)
+            mle_pred = self.model(
+                mle_x, return_all_sequences=True, task="MLE", training=training
+            )
             mle_loss = self.loss(mle_y, mle_pred)
 
             if compute_auxiliary:
-                WOR_pred = self.model.call_word_order_recovery(
-                    *auxiliary_data["wor"]["x"]
-                )
-                # UOR_pred = self.model.call_utterance_order_recovery(
-                #     *auxiliary_data["uor"]["x"]
-                # )
-                MWR_pred = self.model.call_masked_word_recovery(
-                    *auxiliary_data["mwr"]["x"]
-                )
-                MUR_pred = self.model.call_masked_utterance_recovery(
-                    *auxiliary_data["mur"]["x"]
-                )
+                WOR_pred = self.model(auxiliary_data["wor"]["x"], task="WOR")
+                # UOR_pred = self.model(auxiliary_data["uor"]["x"], task="UOR")
+                MWR_pred = self.model(auxiliary_data["mwr"]["x"], task="MCR")
+                MUR_pred = self.model(auxiliary_data["mur"]["x"], task="MCR")
 
                 WOR_loss += self.loss(auxiliary_data["wor"]["y"], WOR_pred)
                 # UOR_loss += self.loss(auxiliary_data["uor"]["y"], UOR_pred)
-                MWR_loss += tf.reduce_mean(
-                    [
-                        self.loss(pred, MWR_pred[i])
-                        for i, pred in enumerate(auxiliary_data["mwr"]["y"])
-                    ]
-                )
+                MWR_loss += self.loss(auxiliary_data["mwr"]["y"], MWR_pred)
                 MUR_loss += self.loss(auxiliary_data["mur"]["y"], MUR_pred)
 
                 # auxiliary_loss += WOR_loss + UOR_loss + MWR_loss + MUR_loss
