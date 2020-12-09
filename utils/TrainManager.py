@@ -1,4 +1,5 @@
 import os
+import warnings
 from datetime import datetime as dt
 from typing import Dict, Optional, Tuple
 
@@ -6,6 +7,24 @@ import tensorflow as tf
 from tqdm import tqdm
 
 from modeling.model import DialogWithAuxility
+
+
+warnings.filterwarnings(action="ignore")
+tf.get_logger().setLevel("ERROR")
+tf.autograph.set_verbosity(3)
+
+gpus = tf.config.experimental.list_physical_devices("GPU")
+if gpus:
+    # Restrict TensorFlow to only use the first GPU
+    try:
+        tf.config.experimental.set_visible_devices(gpus[0], "GPU")
+        logical_gpus = tf.config.experimental.list_logical_devices("GPU")
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
+    except RuntimeError as e:
+        # Visible devices must be set before GPUs have been initialized
+        print(e)
+else:
+    print("No GPU detected")
 
 
 class TrainManager:
@@ -23,12 +42,23 @@ class TrainManager:
             "MUR_loss",
         ]
 
-        self.loss = tf.keras.losses.SparseCategoricalCrossentropy()
+        self.set_loss()
 
         self.train_metrics = {}
         self.valid_metrics = {}
 
         self.init_metrics()
+
+    def set_loss(self):
+        def mcr_loss(y_true, y_pred):
+            idx = y_true == 4
+            y_true_mask = y_true[idx]
+            y_pred_mask = y_pred[idx]
+            loss = self.sparse_cross_entropy_loss(y_true_mask, y_pred_mask)
+            return loss
+
+        self.sparse_cross_entropy_loss = tf.keras.losses.SparseCategoricalCrossentropy()
+        self.MCR_loss = mcr_loss
 
     def init_metrics(self):
         for name in self.metrics_name:
@@ -79,16 +109,16 @@ class TrainManager:
 
             train_data_generator = train_dataloader.load_data()
             valid_data_generator = test_dataloader.load_data()
-            if verbose:
-                train_data_generator = tqdm(train_data_generator)
-                valid_data_generator = tqdm(valid_data_generator)
 
-            # TODO: 여기 어딘가에서 에러가 남. 왜지
-            for batch in train_data_generator:
+            print("start train")
+            for batch in tqdm(train_data_generator):
                 self._train_batch(batch, self.alpha > 0, training=True)
+                break
 
-            for batch in valid_data_generator:
+            print("start validation")
+            for batch in tqdm(valid_data_generator):
                 self._train_batch(batch, self.alpha > 0, training=False)
+                break
 
             if verbose:
                 for key, value in self.train_metrics.items():
@@ -112,6 +142,15 @@ class TrainManager:
             train_dataloader.end_of_epoch()
             test_dataloader.end_of_epoch()
 
+    def _write_on_tensorboard(self, epoch):
+        with self.train_summary_writter.as_default():
+            for key, value in self.train_metrics.items():
+                tf.summary.scalar(key, value.result(), epoch)
+
+        with self.valid_summary_writter.as_default():
+            for key, value in self.valid_metrics.items():
+                tf.summary.scalar(key, value.result(), epoch)
+
     @tf.function
     def _train_batch(
         self,
@@ -133,7 +172,7 @@ class TrainManager:
             mle_pred = self.model(
                 mle_x, return_all_sequences=True, task="MLE", training=training
             )
-            mle_loss = self.loss(mle_y, mle_pred)
+            mle_loss = self.sparse_cross_entropy_loss(mle_y, mle_pred)
 
             if compute_auxiliary:
                 WOR_pred = self.model(auxiliary_data["wor"]["x"], task="WOR")
@@ -141,10 +180,12 @@ class TrainManager:
                 MWR_pred = self.model(auxiliary_data["mwr"]["x"], task="MCR")
                 MUR_pred = self.model(auxiliary_data["mur"]["x"], task="MCR")
 
-                WOR_loss += self.loss(auxiliary_data["wor"]["y"], WOR_pred)
+                WOR_loss += self.sparse_cross_entropy_loss(
+                    auxiliary_data["wor"]["y"], WOR_pred
+                )
                 # UOR_loss += self.loss(auxiliary_data["uor"]["y"], UOR_pred)
-                MWR_loss += self.loss(auxiliary_data["mwr"]["y"], MWR_pred)
-                MUR_loss += self.loss(auxiliary_data["mur"]["y"], MUR_pred)
+                MWR_loss += self.MCR_loss(auxiliary_data["mwr"]["y"], MWR_pred)
+                MUR_loss += self.MCR_loss(auxiliary_data["mur"]["y"], MUR_pred)
 
                 # auxiliary_loss += WOR_loss + UOR_loss + MWR_loss + MUR_loss
                 auxiliary_loss += WOR_loss + MWR_loss + MUR_loss
@@ -173,14 +214,3 @@ class TrainManager:
             # self.valid_metrics["UOR_loss"].update_state(UOR_loss)
             self.valid_metrics["MWR_loss"].update_state(MWR_loss)
             self.valid_metrics["MUR_loss"].update_state(MUR_loss)
-
-        return None
-
-    def _write_on_tensorboard(self, epoch):
-        with self.train_summary_writter.as_default():
-            for key, value in self.train_metrics.items():
-                tf.summary.scalar(key, value.result(), epoch)
-
-        with self.valid_summary_writter.as_default():
-            for key, value in self.valid_metrics.items():
-                tf.summary.scalar(key, value.result(), epoch)

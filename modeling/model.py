@@ -140,7 +140,8 @@ class DialogWithAuxility(tf.keras.Model):
         E = tf.concat(encoder_output, axis=0)
 
         output = self.output_layer(E)
-        return output
+        shape = [batch_size, -1] + list(output.shape[1:])
+        return tf.reshape(output, shape)
 
     def call_MLE(self, data, return_all_sequences=False):
         (

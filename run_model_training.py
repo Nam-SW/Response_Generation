@@ -1,7 +1,5 @@
 import argparse
 
-# from tensorflow.distribute import MirroredStrategy
-
 from dataloader import get_dataloader
 from utils.JsonManager import JsonManager
 from utils.TrainManager import TrainManager
@@ -15,9 +13,6 @@ def main(args, model_hparams):
         (args.data_shuffle.lower()) == "true",
     )
 
-    # strategy = MirroredStrategy()
-
-    # with strategy.scope():
     trainer = TrainManager(model_hparams)
     trainer.compile(float(args.learning_rate))
     trainer.train(
