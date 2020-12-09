@@ -1,4 +1,3 @@
-from math import ceil
 from os.path import abspath
 
 import numpy as np
@@ -13,22 +12,18 @@ class DataLoader:
         contexts: np.ndarray,
         response: np.ndarray,
         Y: np.ndarray,
-        batch_size=32,
         shuffle=True,
         mask_ids=4,
     ):
         self.contexts = contexts
         self.response = response
         self.Y = Y
-        self.batch_size = batch_size
         self.shuffle = shuffle
         self.mask_ids = mask_ids
 
         self.utterance_size = self.contexts.shape[1]
 
-        self.end_of_epoch()
-
-    def end_of_epoch(self):
+    def start_of_epoch(self):
         if self.shuffle:
             s = np.arange(len(self.Y))
             np.random.shuffle(s)
@@ -38,101 +33,103 @@ class DataLoader:
             self.Y = self.Y[s]
 
     def get_wor_data(self, batch):
-        shuffle_idx = np.random.choice([*range(self.utterance_size)], self.batch_size)
+        shuffle_idx = np.random.choice([*range(self.utterance_size)])
 
-        x = np.zeros((self.batch_size, batch.shape[-1]), dtype=np.int32)
-        y = np.zeros((self.batch_size, batch.shape[-1]), dtype=np.int32)
-        for i, s_i in enumerate(shuffle_idx):
-            temp = batch[i, s_i].copy()
-            length = np.count_nonzero(temp, axis=0)
-            ids = temp[:length]
-            np.random.shuffle(ids)
-            temp[:length] = ids
+        x = batch[shuffle_idx].copy()
+        y = batch[shuffle_idx].copy()
 
-            x[i] = temp
-            y[i] = batch[i, s_i]
+        length = np.count_nonzero(x)
+        ids = x[:length]
+        np.random.shuffle(ids)
+        x[:length] = ids
 
-        return x, y
+        return x.tolist(), y.tolist()
 
     def get_uor_data(self, batch):
         # TODO: implement
-        return (None, None)
+        return [0], [0]
 
     def get_mwr_data(self, batch):
-        def masking(x):
-            length = np.count_nonzero(x)
+        x = batch.copy()
+        for i in range(self.utterance_size):
+            length = np.count_nonzero(x[i])
             mask_count = np.ceil(length * 0.15).astype(np.int32)
             mask_w_idx = np.random.choice(np.arange(length), mask_count)
-            x[mask_w_idx] = self.mask_ids
-
-            return x
-
-        x = np.apply_along_axis(masking, -1, batch.copy())
+            x[i, mask_w_idx] = self.mask_ids
         y = batch.copy()
 
-        return x, y
+        return x.tolist(), y.tolist()
 
     def get_mur_data(self, batch):
         x = batch.copy()
-        for i in range(self.batch_size):
-            idx = np.random.choice([*range(self.utterance_size)])
-            x[i, idx] = self.mask_ids
+        idx = np.random.choice([*range(self.utterance_size)])
+        x[idx] = self.mask_ids
         y = batch.copy()
 
-        return x, y
+        return x.tolist(), y.tolist()
 
     def MLE_Task(self):
         for i in range(len(self)):
-            idx = [*range(i * self.batch_size, (i + 1) * self.batch_size)]
-            contexts = self.contexts[idx]
-            response = self.response[idx]
-            Y = self.Y[idx]
+            # idx = [*range(i * self.batch_size, (i + 1) * self.batch_size)]
+            # contexts = self.contexts[idx]
+            # response = self.response[idx]
+            # Y = self.Y[idx]
+            contexts = self.contexts[i]
+            response = self.response[i]
+            Y = self.Y[i]
 
-            yield (contexts, response), Y
+            yield (contexts.tolist(), response.tolist()), Y
 
     def Auxiliary_Task(self):
-        task_names = ["wor", "uor", "mwr", "mur"]
-
         for i in range(len(self)):
-            idx = [*range(i * self.batch_size, (i + 1) * self.batch_size)]
-            contexts = self.contexts[idx]
+            # idx = [*range(i * self.batch_size, (i + 1) * self.batch_size)]
+            # contexts = self.contexts[idx]
+            contexts = self.contexts[i]
 
             wor = self.get_wor_data(contexts)
             uor = self.get_uor_data(contexts)
             mwr = self.get_mwr_data(contexts)
             mur = self.get_mur_data(contexts)
 
-            tasks = [wor, uor, mwr, mur]
+            tasks = (wor, uor, mwr, mur)
 
-            data_dict = {
-                name: {
-                    "x": data[0],
-                    "y": data[1],
-                }
-                for name, data in zip(task_names, tasks)
-            }
-
-            yield data_dict
+            yield tasks
 
     def load_data(self):
+        self.start_of_epoch()
+
         for mle, auxiliary in zip(self.MLE_Task(), self.Auxiliary_Task()):
             yield mle, auxiliary
 
     def __len__(self):
-        return ceil(len(self.Y) / self.batch_size)
+        return len(self.Y)
 
 
 def get_dataloader(
     data_dir: str,
     validation_split: float,
-    batch_size=32,
+    # batch_size=32,
     shuffle=True,
     mask_ids=4,
 ):
     data_dir = abspath(data_dir)
     train, test = load_data(data_dir, validation_split)
 
-    train_dataloader = DataLoader(*train, batch_size, shuffle, mask_ids)
-    test_dataloader = DataLoader(*test, batch_size, shuffle, mask_ids)
+    # train_dataloader = DataLoader(*train, batch_size, shuffle, mask_ids)
+    # test_dataloader = DataLoader(*test, batch_size, shuffle, mask_ids)
+    train_dataloader = DataLoader(*train, shuffle, mask_ids)
+    test_dataloader = DataLoader(*test, shuffle, mask_ids)
 
     return train_dataloader, test_dataloader
+
+
+def get_tf_data(dataloader: DataLoader, global_batch_size):
+    dtypes = (
+        ((tf.int32, tf.int32), tf.int32),
+        tuple([(tf.int32, tf.int32) for _ in range(4)]),
+    )
+    dataset = tf.data.Dataset.from_generator(dataloader, output_types=dtypes).batch(
+        global_batch_size
+    )
+
+    return dataset

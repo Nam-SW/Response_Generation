@@ -1,28 +1,8 @@
 import argparse
 
-from dataloader import get_dataloader
+
 from utils.JsonManager import JsonManager
-from utils.TrainManager import TrainManager
-
-
-def main(args, model_hparams):
-    train_dataloader, test_dataloader = get_dataloader(
-        args.data_dir,
-        float(args.validation_split),
-        int(args.batch_size),
-        (args.data_shuffle.lower()) == "true",
-    )
-
-    trainer = TrainManager(model_hparams)
-    trainer.compile(float(args.learning_rate))
-    trainer.train(
-        train_dataloader,
-        test_dataloader,
-        model_save_dir=args.model_save_dir,
-        tensorboard_log_dir=args.tensorboard_log_dir,
-        epochs=int(args.epochs),
-        verbose=int(args.verbose),
-    )
+from utils.train import train
 
 
 if __name__ == "__main__":
@@ -41,8 +21,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=80)
     parser.add_argument("--epochs", default=5)
     parser.add_argument("--verbose", default=1)
+    parser.add_argument("--gpu_count", default=1)
     parser.add_argument("--model_hparams")
     args = parser.parse_args()
 
     model_hparams = json_manager.load(args.model_hparams)
-    main(args, model_hparams)
+    train(args, model_hparams)

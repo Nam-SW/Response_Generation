@@ -1,36 +1,16 @@
 import os
-import warnings
 from datetime import datetime as dt
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import tensorflow as tf
-from tqdm import tqdm
-
-from modeling.model import DialogWithAuxility
-
-
-warnings.filterwarnings(action="ignore")
-tf.get_logger().setLevel("ERROR")
-tf.autograph.set_verbosity(3)
-
-gpus = tf.config.experimental.list_physical_devices("GPU")
-if gpus:
-    # Restrict TensorFlow to only use the first GPU
-    try:
-        tf.config.experimental.set_visible_devices(gpus[0], "GPU")
-        logical_gpus = tf.config.experimental.list_logical_devices("GPU")
-        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
-    except RuntimeError as e:
-        # Visible devices must be set before GPUs have been initialized
-        print(e)
-else:
-    print("No GPU detected")
 
 
 class TrainManager:
-    def __init__(self, model_hparams: Dict, **kwargs):
-        self.model = DialogWithAuxility(**model_hparams)
-        self.optimizer = None
+    def __init__(self, model, gpu_count, batch_size):
+        self.model = model
+        self.gpu_count = gpu_count
+        self.batch_size = batch_size
+        self.global_batch_size = self.gpu_count * self.batch_size
 
         self.metrics_name = [
             "adversarial_loss",
@@ -43,24 +23,37 @@ class TrainManager:
         ]
 
         self.set_loss()
-
-        self.train_metrics = {}
-        self.valid_metrics = {}
-
         self.init_metrics()
 
     def set_loss(self):
+        self.sparse_cross_entropy = tf.keras.losses.SparseCategoricalCrossentropy()
+
+        def MLE_loss(y_true, y_pred):
+            # loss = self.sparse_cross_entropy(y_true, y_pred)
+            loss = tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred)
+            return tf.nn.compute_average_loss(
+                loss, global_batch_size=self.global_batch_size
+            )
+
         def mcr_loss(y_true, y_pred):
             idx = y_true == 4
             y_true_mask = y_true[idx]
             y_pred_mask = y_pred[idx]
-            loss = self.sparse_cross_entropy_loss(y_true_mask, y_pred_mask)
-            return loss
+            # loss = self.sparse_cross_entropy_loss(y_true_mask, y_pred_mask)
+            loss = tf.keras.losses.sparse_categorical_crossentropy(
+                y_true_mask, y_pred_mask
+            )
+            return tf.nn.compute_average_loss(
+                loss, global_batch_size=self.global_batch_size
+            )
 
-        self.sparse_cross_entropy_loss = tf.keras.losses.SparseCategoricalCrossentropy()
+        self.MLE_loss = MLE_loss
         self.MCR_loss = mcr_loss
 
     def init_metrics(self):
+        self.train_metrics = {}
+        self.valid_metrics = {}
+
         for name in self.metrics_name:
             self.train_metrics[name] = tf.keras.metrics.Mean()
             self.valid_metrics[name] = tf.keras.metrics.Mean()
@@ -68,17 +61,18 @@ class TrainManager:
     def init_training_hparams(self, BatchPerEpoch, epochs, T2=30):
         self.alpha = 1.0
         self.N = BatchPerEpoch
-        self.T1 = epochs * self.N
         self.T2 = T2
         self.d = self.alpha / (self.T2 * self.N)
 
-    def compile(self, learning_late: 0.05, **kwargs):
-        self.optimizer = tf.keras.optimizers.Adagrad(learning_late, **kwargs)
+    def compile(self, optimizer):
+        self.optimizer = optimizer
 
     def train(
         self,
         train_dataloader,
         test_dataloader,
+        strategy,
+        BatchPerEpoch: int,
         model_save_dir: str,
         tensorboard_log_dir: Optional[str],
         epochs: int = 5,
@@ -86,7 +80,7 @@ class TrainManager:
     ):
         assert self.optimizer is not None, "model must be compiled before training."
 
-        self.init_training_hparams(len(train_dataloader), epochs)
+        self.init_training_hparams(BatchPerEpoch, epochs)
 
         model_save_dir = os.path.abspath(model_save_dir)
         if os.path.isdir(model_save_dir):
@@ -107,18 +101,15 @@ class TrainManager:
             if verbose:
                 print(f"{epoch + 1}/{epochs} epochs...")
 
-            train_data_generator = train_dataloader.load_data()
-            valid_data_generator = test_dataloader.load_data()
-
             print("start train")
-            for batch in tqdm(train_data_generator):
-                self._train_batch(batch, self.alpha > 0, training=True)
-                break
+            for batch in train_dataloader:
+                # self._train_batch(batch, self.alpha > 0, training=True)
+                self.distributed_train_batch(batch, strategy, training=True)
 
             print("start validation")
-            for batch in tqdm(valid_data_generator):
-                self._train_batch(batch, self.alpha > 0, training=False)
-                break
+            for batch in test_dataloader:
+                # self._train_batch(batch, self.alpha > 0, training=False)
+                self.distributed_train_batch(batch, strategy, training=False)
 
             if verbose:
                 for key, value in self.train_metrics.items():
@@ -139,9 +130,6 @@ class TrainManager:
 
             self.alpha = max(0, self.alpha - self.d)
 
-            train_dataloader.end_of_epoch()
-            test_dataloader.end_of_epoch()
-
     def _write_on_tensorboard(self, epoch):
         with self.train_summary_writter.as_default():
             for key, value in self.train_metrics.items():
@@ -151,6 +139,20 @@ class TrainManager:
             for key, value in self.valid_metrics.items():
                 tf.summary.scalar(key, value.result(), epoch)
 
+    def distributed_train_batch(self, data, strategy, training):
+        print("어디서 에러가 나는거야")
+        per_replica_losses = strategy.experimental_run_v2(
+            self._train_batch, args=(data, self.alpha > 0, training)
+        )
+
+        print("어디서 에러가 나는거야2")
+        loss = strategy.reduce(
+            tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None
+        )
+
+        print("어디서 에러가 나는거야3")
+        return loss if training else per_replica_losses
+
     @tf.function
     def _train_batch(
         self,
@@ -158,6 +160,7 @@ class TrainManager:
         compute_auxiliary: bool = False,
         training: bool = True,
     ):
+        print("one batch")
         mle_data, auxiliary_data = data
 
         mle_x, mle_y = mle_data
@@ -172,20 +175,20 @@ class TrainManager:
             mle_pred = self.model(
                 mle_x, return_all_sequences=True, task="MLE", training=training
             )
-            mle_loss = self.sparse_cross_entropy_loss(mle_y, mle_pred)
+            mle_loss = self.MLE_loss(mle_y, mle_pred)
 
             if compute_auxiliary:
-                WOR_pred = self.model(auxiliary_data["wor"]["x"], task="WOR")
-                # UOR_pred = self.model(auxiliary_data["uor"]["x"], task="UOR")
-                MWR_pred = self.model(auxiliary_data["mwr"]["x"], task="MCR")
-                MUR_pred = self.model(auxiliary_data["mur"]["x"], task="MCR")
+                wor, uor, mwr, mur = auxiliary_data
 
-                WOR_loss += self.sparse_cross_entropy_loss(
-                    auxiliary_data["wor"]["y"], WOR_pred
-                )
-                # UOR_loss += self.loss(auxiliary_data["uor"]["y"], UOR_pred)
-                MWR_loss += self.MCR_loss(auxiliary_data["mwr"]["y"], MWR_pred)
-                MUR_loss += self.MCR_loss(auxiliary_data["mur"]["y"], MUR_pred)
+                WOR_pred = self.model(wor[0], task="WOR")
+                # UOR_pred = self.model(uor[0], task="UOR")
+                MWR_pred = self.model(mwr[0], task="MCR")
+                MUR_pred = self.model(mwr[0], task="MCR")
+
+                WOR_loss += self.MLE_loss(wor[1], WOR_pred)
+                # UOR_loss += self.loss(uor[1], UOR_pred)
+                MWR_loss += self.MCR_loss(mwr[1], MWR_pred)
+                MUR_loss += self.MCR_loss(mwr[1], MUR_pred)
 
                 # auxiliary_loss += WOR_loss + UOR_loss + MWR_loss + MUR_loss
                 auxiliary_loss += WOR_loss + MWR_loss + MUR_loss
@@ -193,10 +196,13 @@ class TrainManager:
             adversarial_loss = mle_loss + self.alpha * auxiliary_loss
 
         if training:
+            print(1)
             gradient = tape.gradient(adversarial_loss, self.model.trainable_variables)
+            print(2)
             self.optimizer.apply_gradients(
                 zip(gradient, self.model.trainable_variables)
             )
+            print(3)
 
             self.train_metrics["adversarial_loss"].update_state(adversarial_loss)
             self.train_metrics["MLE_loss"].update_state(mle_loss)
@@ -205,6 +211,7 @@ class TrainManager:
             # self.train_metrics["UOR_loss"].update_state(UOR_loss)
             self.train_metrics["MWR_loss"].update_state(MWR_loss)
             self.train_metrics["MUR_loss"].update_state(MUR_loss)
+            print(4)
 
         else:
             self.valid_metrics["adversarial_loss"].update_state(adversarial_loss)
@@ -214,3 +221,5 @@ class TrainManager:
             # self.valid_metrics["UOR_loss"].update_state(UOR_loss)
             self.valid_metrics["MWR_loss"].update_state(MWR_loss)
             self.valid_metrics["MUR_loss"].update_state(MUR_loss)
+
+        return adversarial_loss

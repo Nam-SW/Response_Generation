@@ -4,7 +4,7 @@ import tensorflow as tf
 
 from modeling.attention import Attention, SelfAttention
 from modeling.embedding import Embedding
-from modeling.utils import get_shape
+from modeling.utils import get_shape, FFNN
 
 
 class DialogWithAuxility(tf.keras.Model):
@@ -18,7 +18,6 @@ class DialogWithAuxility(tf.keras.Model):
         attention_head: int,
         encoder_block: int,
         dropout_rate: float,
-        FFNN_size: int,
         **kwargs,
     ):
         super(DialogWithAuxility, self).__init__(**kwargs)
@@ -31,7 +30,6 @@ class DialogWithAuxility(tf.keras.Model):
         self.attention_head = attention_head
         self.encoder_block = encoder_block
         self.dropout_rate = dropout_rate
-        self.FFNN_size = FFNN_size
 
         self.embedding = Embedding(self.vocab_size, self.embedding_size, self.max_len)
         self.dense = tf.keras.layers.Dense(self.hidden_size, use_bias=False)
@@ -51,14 +49,10 @@ class DialogWithAuxility(tf.keras.Model):
 
         self.concat = tf.keras.layers.Concatenate(axis=1)
 
-        self.FFNN = tf.keras.models.Sequential(
-            layers=[
-                tf.keras.layers.Dense(self.hidden_size, activation="linear"),
-                tf.keras.layers.Dropout(self.dropout_rate),
-                tf.keras.layers.BatchNormalization(),
-            ],
-            name="FFNN",
-        )
+        # self.FFNN_dense = tf.keras.layers.Dense(self.hidden_size, activation="linear")
+        # self.FFNN_dropout = tf.keras.layers.Dropout(self.dropout_rate)
+        # self.FFNN_normalize = tf.keras.layers.LayerNormalization()
+        self.FFNN = FFNN(self.hidden_size, self.dropout_rate)
         self.output_layer = tf.keras.layers.Dense(
             self.vocab_size, use_bias=False, activation="softmax"
         )
@@ -244,6 +238,5 @@ class DialogWithAuxility(tf.keras.Model):
             "attention_head": self.attention_head,
             "encoder_block": self.encoder_block,
             "dropout_rate": self.dropout_rate,
-            "FFNN_size": self.FFNN_size,
         }
         return config
