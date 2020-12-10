@@ -80,6 +80,7 @@ class TrainManager:
     ):
         assert self.optimizer is not None, "model must be compiled before training."
 
+        self.strategy = strategy
         self.init_training_hparams(BatchPerEpoch, epochs)
 
         model_save_dir = os.path.abspath(model_save_dir)
@@ -104,12 +105,12 @@ class TrainManager:
             print("start train")
             for batch in train_dataloader:
                 # self._train_batch(batch, self.alpha > 0, training=True)
-                self.distributed_train_batch(batch, strategy, training=True)
+                self.distributed_train_batch(batch, training=True)
 
             print("start validation")
             for batch in test_dataloader:
                 # self._train_batch(batch, self.alpha > 0, training=False)
-                self.distributed_train_batch(batch, strategy, training=False)
+                self.distributed_train_batch(batch, training=False)
 
             if verbose:
                 for key, value in self.train_metrics.items():
@@ -139,21 +140,21 @@ class TrainManager:
             for key, value in self.valid_metrics.items():
                 tf.summary.scalar(key, value.result(), epoch)
 
-    def distributed_train_batch(self, data, strategy, training):
+    @tf.function
+    def distributed_train_batch(self, data, training):
         print("어디서 에러가 나는거야")
-        per_replica_losses = strategy.experimental_run_v2(
+        per_replica_losses = self.strategy.experimental_run_v2(
             self._train_batch, args=(data, self.alpha > 0, training)
         )
 
         print("어디서 에러가 나는거야2")
-        loss = strategy.reduce(
+        loss = self.strategy.reduce(
             tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None
         )
 
         print("어디서 에러가 나는거야3")
         return loss if training else per_replica_losses
 
-    @tf.function
     def _train_batch(
         self,
         data: Tuple,
