@@ -17,7 +17,7 @@ def train(args, model_hparams):
     # 파라미터
     gpus = tf.config.experimental.list_physical_devices("GPU")
     gpus = [gpu.name.split(":", 1)[-1] for gpu in gpus]
-    gpu_count = max(int(args.gpu_count), len(gpus))
+    gpu_count = min(int(args.gpu_count), len(gpus))
     batch_size = int(args.batch_size)
     strategy = tf.distribute.MirroredStrategy(gpus[:gpu_count])
 
