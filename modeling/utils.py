@@ -12,6 +12,11 @@ def gelu(x):
     return x * cdf
 
 
+@tf.function
+def gather(x, ind):
+    return tf.gather(x + 0, ind)
+
+
 class FFNN(tf.keras.layers.Layer):
     def __init__(self, unit_size, dropout_rate=0.2):
         super().__init__()

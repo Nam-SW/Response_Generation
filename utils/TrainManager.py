@@ -102,14 +102,10 @@ class TrainManager:
             if verbose:
                 print(f"{epoch + 1}/{epochs} epochs...")
 
-            print("start train")
             for batch in train_dataloader:
-                # self._train_batch(batch, self.alpha > 0, training=True)
                 self.distributed_train_batch(batch, training=True)
 
-            print("start validation")
             for batch in test_dataloader:
-                # self._train_batch(batch, self.alpha > 0, training=False)
                 self.distributed_train_batch(batch, training=False)
 
             if verbose:
@@ -142,17 +138,14 @@ class TrainManager:
 
     @tf.function
     def distributed_train_batch(self, data, training):
-        print("어디서 에러가 나는거야")
         per_replica_losses = self.strategy.experimental_run_v2(
             self._train_batch, args=(data, self.alpha > 0, training)
         )
 
-        print("어디서 에러가 나는거야2")
         loss = self.strategy.reduce(
             tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None
         )
 
-        print("어디서 에러가 나는거야3")
         return loss if training else per_replica_losses
 
     def _train_batch(
@@ -161,7 +154,6 @@ class TrainManager:
         compute_auxiliary: bool = False,
         training: bool = True,
     ):
-        print("one batch")
         mle_data, auxiliary_data = data
 
         mle_x, mle_y = mle_data
@@ -181,10 +173,10 @@ class TrainManager:
             if compute_auxiliary:
                 wor, uor, mwr, mur = auxiliary_data
 
-                WOR_pred = self.model(wor[0], task="WOR")
-                # UOR_pred = self.model(uor[0], task="UOR")
-                MWR_pred = self.model(mwr[0], task="MCR")
-                MUR_pred = self.model(mwr[0], task="MCR")
+                WOR_pred = self.model(wor[0], task="WOR", training=training)
+                # UOR_pred = self.model(uor[0], task="UOR", training=training)
+                MWR_pred = self.model(mwr[0], task="MCR", training=training)
+                MUR_pred = self.model(mwr[0], task="MCR", training=training)
 
                 WOR_loss += self.MLE_loss(wor[1], WOR_pred)
                 # UOR_loss += self.loss(uor[1], UOR_pred)
@@ -197,13 +189,10 @@ class TrainManager:
             adversarial_loss = mle_loss + self.alpha * auxiliary_loss
 
         if training:
-            print(1)
             gradient = tape.gradient(adversarial_loss, self.model.trainable_variables)
-            print(2)
             self.optimizer.apply_gradients(
                 zip(gradient, self.model.trainable_variables)
             )
-            print(3)
 
             self.train_metrics["adversarial_loss"].update_state(adversarial_loss)
             self.train_metrics["MLE_loss"].update_state(mle_loss)
@@ -212,7 +201,6 @@ class TrainManager:
             # self.train_metrics["UOR_loss"].update_state(UOR_loss)
             self.train_metrics["MWR_loss"].update_state(MWR_loss)
             self.train_metrics["MUR_loss"].update_state(MUR_loss)
-            print(4)
 
         else:
             self.valid_metrics["adversarial_loss"].update_state(adversarial_loss)

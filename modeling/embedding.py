@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-from modeling.utils import get_shape
+from modeling.utils import get_shape, gather
 
 
 class Embedding(tf.keras.layers.Layer):
@@ -44,7 +44,7 @@ class Embedding(tf.keras.layers.Layer):
         return tf.cast(pos_encoding, dtype=tf.float32)
 
     def call(self, input_ids, token_type_ids=None):
-        word_embedding = tf.gather(self.word_embedding, input_ids)
+        word_embedding = gather(self.word_embedding, input_ids)
         if token_type_ids is None:
             segment_embedding = tf.fill(get_shape(word_embedding), 0.0)
         else:
