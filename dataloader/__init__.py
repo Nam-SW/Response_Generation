@@ -115,21 +115,21 @@ def get_dataloader(
     data_dir = abspath(data_dir)
     train, test = load_data(data_dir, validation_split)
 
-    # train_dataloader = DataLoader(*train, batch_size, shuffle, mask_ids)
-    # test_dataloader = DataLoader(*test, batch_size, shuffle, mask_ids)
     train_dataloader = DataLoader(*train, shuffle, mask_ids)
     test_dataloader = DataLoader(*test, shuffle, mask_ids)
 
     return train_dataloader, test_dataloader
 
 
-def get_tf_data(dataloader: DataLoader, global_batch_size):
+def get_tf_data(dataloader: DataLoader, global_batch_size, repeat=True):
     dtypes = (
         ((tf.int32, tf.int32), tf.int32),
         tuple([(tf.int32, tf.int32) for _ in range(4)]),
     )
-    dataset = tf.data.Dataset.from_generator(dataloader, output_types=dtypes).batch(
-        global_batch_size
-    )
+    dataset = tf.data.Dataset.from_generator(dataloader, output_types=dtypes)
+
+    if repeat:
+        dataset = dataset.repeat()
+    dataset = dataset.batch(global_batch_size)
 
     return dataset

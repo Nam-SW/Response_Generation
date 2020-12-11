@@ -16,13 +16,16 @@ if __name__ == "__main__":
     parser.add_argument("--data_shuffle", default=True)
 
     parser.add_argument("--model_save_dir", default="model")
-    parser.add_argument("--tensorboard_log_dir", default="logs")
+    parser.add_argument("--tensorboard_log_dir", default=None)
     parser.add_argument("--learning_rate", default=0.0001)
     parser.add_argument("--batch_size", default=80)
-    parser.add_argument("--epochs", default=5)
+    # parser.add_argument("--epochs", default=5)
+    parser.add_argument("--global_max_step", default=50000)
+    parser.add_argument("--validation_step", default=1000)
     parser.add_argument("--verbose", default=1)
     parser.add_argument("--gpu_count", default=1)
     parser.add_argument("--model_hparams")
+    parser.add_argument("--tokenizer", default=None)
     args = parser.parse_args()
 
     model_hparams = json_manager.load(args.model_hparams)

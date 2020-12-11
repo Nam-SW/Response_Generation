@@ -34,7 +34,7 @@ def train(args, model_hparams):
             get_tf_data(train_dataloader.load_data, gpu_count * batch_size)
         )
         test_dist_dataset = strategy.experimental_distribute_dataset(
-            get_tf_data(test_dataloader.load_data, gpu_count * batch_size)
+            get_tf_data(test_dataloader.load_data, gpu_count * batch_size, repeat=False)
         )
 
         model = DialogWithAuxility(**model_hparams)
@@ -49,6 +49,9 @@ def train(args, model_hparams):
             BatchPerEpoch=ceil(len(train_dataloader) / batch_size * gpu_count),
             model_save_dir=args.model_save_dir,
             tensorboard_log_dir=args.tensorboard_log_dir,
-            epochs=int(args.epochs),
+            # epochs=int(args.epochs),
+            global_max_step=int(args.global_max_step),
+            validation_step=int(args.validation_step),
             verbose=int(args.verbose),
+            test_tokenizer_config=args.tokenizer,
         )
