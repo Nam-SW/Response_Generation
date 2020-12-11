@@ -36,8 +36,8 @@ class TrainManager:
                 loss, global_batch_size=self.global_batch_size
             )
 
-        def mcr_loss(y_true, y_pred):
-            idx = y_true == 4
+        def mcr_loss(x, y_true, y_pred):
+            idx = x == 4
             y_true_mask = y_true[idx]
             y_pred_mask = y_pred[idx]
             # loss = self.sparse_cross_entropy_loss(y_true_mask, y_pred_mask)
@@ -104,14 +104,16 @@ class TrainManager:
             self.setup_tensorboard(tensorboard_log_dir)
             self.use_tensorboard = True
 
-        # print(self.use_tensorboard)
         for epoch in range(epochs):
             if verbose:
                 print(f"{epoch + 1}/{epochs} epochs...")
 
             for batch in train_dataloader:
-                # print("in train")
                 self.distributed_train_batch(batch, self.alpha > 0, training=True)
+                for k, v in self.train_metrics.items():
+                    print(f"{k}: {v.result()}")
+                print()
+
                 self._write_on_tensorboard_train()
                 self.train_global_step += 1
 
@@ -119,17 +121,6 @@ class TrainManager:
                 self.distributed_train_batch(batch, self.alpha > 0, training=False)
                 self._write_on_tensorboard_valid()
                 self.valid_global_step += 1
-
-            if verbose:
-                for key, value in self.train_metrics.items():
-                    print(f"{key}: {value.result()}", end="\t")
-
-                print()
-
-                for key, value in self.valid_metrics.items():
-                    print(f"{key}: {value.result()}", end="\t")
-
-                print()
 
             self.model.save_weights(
                 os.path.join(model_save_dir), f"model_weight_{epoch+1: 02d}"
@@ -189,12 +180,12 @@ class TrainManager:
                 WOR_pred = self.model(wor[0], task="WOR", training=training)
                 # UOR_pred = self.model(uor[0], task="UOR", training=training)
                 MWR_pred = self.model(mwr[0], task="MCR", training=training)
-                MUR_pred = self.model(mwr[0], task="MCR", training=training)
+                MUR_pred = self.model(mur[0], task="MCR", training=training)
 
                 WOR_loss += self.MLE_loss(wor[1], WOR_pred)
                 # UOR_loss += self.loss(uor[1], UOR_pred)
-                MWR_loss += self.MCR_loss(mwr[1], MWR_pred)
-                MUR_loss += self.MCR_loss(mwr[1], MUR_pred)
+                MWR_loss += self.MCR_loss(*mwr, MWR_pred)
+                MUR_loss += self.MCR_loss(*mur, MUR_pred)
 
                 # auxiliary_loss += WOR_loss + UOR_loss + MWR_loss + MUR_loss
                 auxiliary_loss += WOR_loss + MWR_loss + MUR_loss
