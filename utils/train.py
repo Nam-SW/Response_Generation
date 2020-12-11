@@ -16,7 +16,7 @@ tf.autograph.set_verbosity(3)
 def train(args, model_hparams):
     # 파라미터
     gpus = tf.config.experimental.list_physical_devices("GPU")
-    gpu_count = min(int(args.gpu_count), len(gpus))
+    gpu_count = max(min(int(args.gpu_count), len(gpus)), 1)
     tf.config.experimental.set_visible_devices(gpus[:gpu_count], "GPU")
     gpus = [gpu.name.split(":", 1)[-1] for gpu in gpus]
     batch_size = int(args.batch_size)

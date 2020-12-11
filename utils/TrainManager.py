@@ -11,6 +11,7 @@ class TrainManager:
         self.gpu_count = gpu_count
         self.batch_size = batch_size
         self.global_batch_size = self.gpu_count * self.batch_size
+        self.use_tensorboard = False
 
         self.metrics_name = [
             "adversarial_loss",
@@ -55,17 +56,28 @@ class TrainManager:
         self.valid_metrics = {}
 
         for name in self.metrics_name:
-            self.train_metrics[name] = tf.keras.metrics.Mean()
-            self.valid_metrics[name] = tf.keras.metrics.Mean()
+            self.train_metrics[name] = tf.keras.metrics.Mean("train_" + name)
+            self.valid_metrics[name] = tf.keras.metrics.Mean("valid_" + name)
 
     def init_training_hparams(self, BatchPerEpoch, epochs, T2=30):
         self.alpha = 1.0
         self.N = BatchPerEpoch
         self.T2 = T2
         self.d = self.alpha / (self.T2 * self.N)
+        self.train_global_step = 0
+        self.valid_global_step = 0
 
     def compile(self, optimizer):
         self.optimizer = optimizer
+
+    def setup_tensorboard(self, tensorboard_log_dir):
+        current_time = dt.now().strftime("%Y%m%d-%H%M%S")
+
+        train_log_dir = os.path.join(tensorboard_log_dir, current_time, "train")
+        valid_log_dir = os.path.join(tensorboard_log_dir, current_time, "test")
+
+        self.train_summary_writter = tf.summary.create_file_writer(train_log_dir)
+        self.valid_summary_writter = tf.summary.create_file_writer(valid_log_dir)
 
     def train(
         self,
@@ -89,24 +101,24 @@ class TrainManager:
 
         if tensorboard_log_dir:
             tensorboard_log_dir = os.path.abspath(tensorboard_log_dir)
+            self.setup_tensorboard(tensorboard_log_dir)
+            self.use_tensorboard = True
 
-            current_time = dt.now().strftime("%Y%m%d-%H%M%S")
-
-            train_log_dir = os.path.join(tensorboard_log_dir, current_time, "train")
-            valid_log_dir = os.path.join(tensorboard_log_dir, current_time, "test")
-
-            self.train_summary_writter = tf.summary.create_file_writer(train_log_dir)
-            self.valid_summary_writter = tf.summary.create_file_writer(valid_log_dir)
-
+        # print(self.use_tensorboard)
         for epoch in range(epochs):
             if verbose:
                 print(f"{epoch + 1}/{epochs} epochs...")
 
             for batch in train_dataloader:
-                self.distributed_train_batch(batch, training=True)
+                # print("in train")
+                self.distributed_train_batch(batch, self.alpha > 0, training=True)
+                self._write_on_tensorboard_train()
+                self.train_global_step += 1
 
             for batch in test_dataloader:
-                self.distributed_train_batch(batch, training=False)
+                self.distributed_train_batch(batch, self.alpha > 0, training=False)
+                self._write_on_tensorboard_valid()
+                self.valid_global_step += 1
 
             if verbose:
                 for key, value in self.train_metrics.items():
@@ -122,31 +134,33 @@ class TrainManager:
             self.model.save_weights(
                 os.path.join(model_save_dir), f"model_weight_{epoch+1: 02d}"
             )
-            if tensorboard_log_dir:
-                self._write_on_tensorboard(epoch)
 
             self.alpha = max(0, self.alpha - self.d)
 
-    def _write_on_tensorboard(self, epoch):
+    def _write_on_tensorboard_train(self):
+        if not self.use_tensorboard:
+            return
         with self.train_summary_writter.as_default():
-            for key, value in self.train_metrics.items():
-                tf.summary.scalar(key, value.result(), epoch)
+            for value in self.train_metrics.values():
+                tf.summary.scalar(value.name, value.result(), self.train_global_step)
+                value.reset_states()
+        # print("write_train")
 
+    def _write_on_tensorboard_valid(self):
+        if not self.use_tensorboard:
+            return
         with self.valid_summary_writter.as_default():
-            for key, value in self.valid_metrics.items():
-                tf.summary.scalar(key, value.result(), epoch)
+            for value in self.valid_metrics.values():
+                tf.summary.scalar(value.name, value.result(), self.valid_global_step)
+                value.reset_states()
+            # print("write_valid")
 
     @tf.function
-    def distributed_train_batch(self, data, training):
-        per_replica_losses = self.strategy.experimental_run_v2(
-            self._train_batch, args=(data, self.alpha > 0, training)
+    def distributed_train_batch(self, data, compute_auxiliary, training):
+        loss = self.strategy.experimental_run_v2(
+            self._train_batch, args=(data, compute_auxiliary, training)
         )
-
-        loss = self.strategy.reduce(
-            tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None
-        )
-
-        return loss if training else per_replica_losses
+        return loss
 
     def _train_batch(
         self,
@@ -155,7 +169,6 @@ class TrainManager:
         training: bool = True,
     ):
         mle_data, auxiliary_data = data
-
         mle_x, mle_y = mle_data
 
         auxiliary_loss = 0
@@ -194,21 +207,21 @@ class TrainManager:
                 zip(gradient, self.model.trainable_variables)
             )
 
-            self.train_metrics["adversarial_loss"].update_state(adversarial_loss)
-            self.train_metrics["MLE_loss"].update_state(mle_loss)
-            self.train_metrics["Auxiliary_loss"].update_state(auxiliary_loss)
-            self.train_metrics["WOR_loss"].update_state(WOR_loss)
-            # self.train_metrics["UOR_loss"].update_state(UOR_loss)
-            self.train_metrics["MWR_loss"].update_state(MWR_loss)
-            self.train_metrics["MUR_loss"].update_state(MUR_loss)
+            self.train_metrics["adversarial_loss"](adversarial_loss)
+            self.train_metrics["MLE_loss"](mle_loss)
+            self.train_metrics["Auxiliary_loss"](auxiliary_loss)
+            self.train_metrics["WOR_loss"](WOR_loss)
+            # self.train_metrics["UOR_loss"](UOR_loss)
+            self.train_metrics["MWR_loss"](MWR_loss)
+            self.train_metrics["MUR_loss"](MUR_loss)
 
         else:
-            self.valid_metrics["adversarial_loss"].update_state(adversarial_loss)
-            self.valid_metrics["MLE_loss"].update_state(mle_loss)
-            self.valid_metrics["Auxiliary_loss"].update_state(auxiliary_loss)
-            self.valid_metrics["WOR_loss"].update_state(WOR_loss)
-            # self.valid_metrics["UOR_loss"].update_state(UOR_loss)
-            self.valid_metrics["MWR_loss"].update_state(MWR_loss)
-            self.valid_metrics["MUR_loss"].update_state(MUR_loss)
+            self.valid_metrics["adversarial_loss"](adversarial_loss)
+            self.valid_metrics["MLE_loss"](mle_loss)
+            self.valid_metrics["Auxiliary_loss"](auxiliary_loss)
+            self.valid_metrics["WOR_loss"](WOR_loss)
+            # self.valid_metrics["UOR_loss"](UOR_loss)
+            self.valid_metrics["MWR_loss"](MWR_loss)
+            self.valid_metrics["MUR_loss"](MUR_loss)
 
         return adversarial_loss
