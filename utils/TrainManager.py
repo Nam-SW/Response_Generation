@@ -4,6 +4,8 @@ from typing import Optional, Tuple
 
 import tensorflow as tf
 
+from tokenizer import load_tokenizer
+
 
 class TrainManager:
     def __init__(self, model, gpu_count, batch_size):
@@ -27,10 +29,7 @@ class TrainManager:
         self.init_metrics()
 
     def set_loss(self):
-        self.sparse_cross_entropy = tf.keras.losses.SparseCategoricalCrossentropy()
-
         def MLE_loss(y_true, y_pred):
-            # loss = self.sparse_cross_entropy(y_true, y_pred)
             loss = tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred)
             return tf.nn.compute_average_loss(
                 loss, global_batch_size=self.global_batch_size
@@ -40,7 +39,6 @@ class TrainManager:
             idx = x == 4
             y_true_mask = y_true[idx]
             y_pred_mask = y_pred[idx]
-            # loss = self.sparse_cross_entropy_loss(y_true_mask, y_pred_mask)
             loss = tf.keras.losses.sparse_categorical_crossentropy(
                 y_true_mask, y_pred_mask
             )
@@ -59,13 +57,13 @@ class TrainManager:
             self.train_metrics[name] = tf.keras.metrics.Mean("train_" + name)
             self.valid_metrics[name] = tf.keras.metrics.Mean("valid_" + name)
 
-    def init_training_hparams(self, BatchPerEpoch, epochs, T2=30):
+    def init_training_hparams(self, BatchPerEpoch, T1, T2=30):
         self.alpha = 1.0
         self.N = BatchPerEpoch
+        self.T1 = T1
         self.T2 = T2
         self.d = self.alpha / (self.T2 * self.N)
         self.train_global_step = 0
-        self.valid_global_step = 0
 
     def compile(self, optimizer):
         self.optimizer = optimizer
@@ -86,41 +84,63 @@ class TrainManager:
         strategy,
         BatchPerEpoch: int,
         model_save_dir: str,
-        tensorboard_log_dir: Optional[str],
-        epochs: int = 5,
+        tensorboard_log_dir: Optional[str] = None,
+        global_max_step: int = 50000,
+        validation_step: int = 1000,
         verbose: int = 1,
+        test_tokenizer_config: Optional[str] = None,
     ):
         assert self.optimizer is not None, "model must be compiled before training."
 
         self.strategy = strategy
-        self.init_training_hparams(BatchPerEpoch, epochs)
+        self.init_training_hparams(BatchPerEpoch, global_max_step)
 
-        model_save_dir = os.path.abspath(model_save_dir)
         if os.path.isdir(model_save_dir):
             os.mkdir(model_save_dir)
+        model_save_dir = os.path.abspath(model_save_dir)
 
         if tensorboard_log_dir:
             tensorboard_log_dir = os.path.abspath(tensorboard_log_dir)
             self.setup_tensorboard(tensorboard_log_dir)
             self.use_tensorboard = True
 
-        for epoch in range(epochs):
-            if verbose:
-                print(f"{epoch + 1}/{epochs} epochs...")
+        test_predict = test_tokenizer_config is not None
+        if test_predict:
+            test_tokenizer_config = os.path.abspath(test_tokenizer_config)
+            tokenizer = load_tokenizer(test_tokenizer_config)
 
-            for batch in train_dataloader:
-                self.distributed_train_batch(batch, self.alpha > 0, training=True)
-                self._write_on_tensorboard_train()
-                self.train_global_step += 1
+        print("Train Start")
+        for batch in train_dataloader:
+            self.distributed_train_batch(batch, self.alpha > 0, training=True)
+            self._write_on_tensorboard_train()
 
-            for batch in test_dataloader:
-                self.distributed_train_batch(batch, self.alpha > 0, training=False)
-                self._write_on_tensorboard_valid()
-                self.valid_global_step += 1
+            if (self.train_global_step + 1) % validation_step == 0:
+                for batch in test_dataloader:
+                    self.distributed_train_batch(batch, self.alpha > 0, training=False)
+                    break
 
+                self.model.save_weights(os.path.join(model_save_dir), "model_weight.h5")
+
+                if verbose:
+                    print(f"{self.train_global_step} Step")
+                    for value in self.valid_metrics.values():
+                        print(f"valid_{value.name}: {value.result(): .4f}", end="\t")
+                    print("\n")
+
+                self._write_on_tensorboard_valid(
+                    self.train_global_step // validation_step
+                )
+                # if test_predict:
+                #     (x, y) = batch[0]
+                #     context,
+                #     for
             self.alpha = max(0, self.alpha - self.d)
+            self.train_global_step += 1
 
-        self.model.save_weights(os.path.join(model_save_dir), "model_weight.h5")
+            if self.train_global_step > self.T1:
+                break
+
+        print(f"train Done! model saved at {model_save_dir}")
 
     def _write_on_tensorboard_train(self):
         if not self.use_tensorboard:
@@ -130,12 +150,12 @@ class TrainManager:
                 tf.summary.scalar(value.name, value.result(), self.train_global_step)
                 value.reset_states()
 
-    def _write_on_tensorboard_valid(self):
+    def _write_on_tensorboard_valid(self, step):
         if not self.use_tensorboard:
             return
         with self.valid_summary_writter.as_default():
             for value in self.valid_metrics.values():
-                tf.summary.scalar(value.name, value.result(), self.valid_global_step)
+                tf.summary.scalar(value.name, value.result(), step)
                 value.reset_states()
 
     @tf.function
