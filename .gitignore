@@ -130,3 +130,5 @@ dmypy.json
 data/
 config/remove_names.json
 *.zip
+model/
+logs/

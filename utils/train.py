@@ -54,4 +54,5 @@ def train(args, model_hparams):
             validation_step=int(args.validation_step),
             verbose=int(args.verbose),
             test_tokenizer_config=args.tokenizer,
+            load_latest=bool(args.load_latest.lower() == "true"),
         )

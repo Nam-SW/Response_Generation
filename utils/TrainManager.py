@@ -89,25 +89,32 @@ class TrainManager:
         validation_step: int = 1000,
         verbose: int = 1,
         test_tokenizer_config: Optional[str] = None,
+        load_latest: bool = False,
     ):
         assert self.optimizer is not None, "model must be compiled before training."
 
         self.strategy = strategy
         self.init_training_hparams(BatchPerEpoch, global_max_step)
 
-        if os.path.isdir(model_save_dir):
+        if not os.path.isdir(model_save_dir):
             os.mkdir(model_save_dir)
         model_save_dir = os.path.abspath(model_save_dir)
+        model_save_prefix = os.path.join(model_save_dir, "ckpt")
+
+        checkpoint = tf.train.Checkpoint(optimizer=self.optimizer, model=self.model)
+        if load_latest:
+            checkpoint.restore(tf.train.latest_checkpoint(model_save_dir))
 
         if tensorboard_log_dir:
             tensorboard_log_dir = os.path.abspath(tensorboard_log_dir)
             self.setup_tensorboard(tensorboard_log_dir)
             self.use_tensorboard = True
 
-        test_predict = test_tokenizer_config is not None
-        if test_predict:
-            test_tokenizer_config = os.path.abspath(test_tokenizer_config)
-            tokenizer = load_tokenizer(test_tokenizer_config)
+        # TODO: 테스트용 텍스트 생성 구현하기
+        # test_predict = test_tokenizer_config is not None
+        # if test_predict:
+        #     test_tokenizer_config = os.path.abspath(test_tokenizer_config)
+        #     tokenizer = load_tokenizer(test_tokenizer_config)
 
         print("Train Start")
         for batch in train_dataloader:
@@ -119,10 +126,10 @@ class TrainManager:
                     self.distributed_train_batch(batch, self.alpha > 0, training=False)
                     break
 
-                self.model.save_weights(os.path.join(model_save_dir), "model_weight.h5")
+                # self.model.save_weights(os.path.join(model_save_dir), "model_weight.h5")
 
                 if verbose:
-                    print(f"{self.train_global_step} Step")
+                    print(f"{self.train_global_step + 1} Step")
                     for value in self.valid_metrics.values():
                         print(f"valid_{value.name}: {value.result(): .4f}", end="\t")
                     print("\n")
@@ -130,10 +137,8 @@ class TrainManager:
                 self._write_on_tensorboard_valid(
                     self.train_global_step // validation_step
                 )
-                # if test_predict:
-                #     (x, y) = batch[0]
-                #     context,
-                #     for
+
+                checkpoint.save(model_save_prefix)
             self.alpha = max(0, self.alpha - self.d)
             self.train_global_step += 1
 
