@@ -110,10 +110,6 @@ class TrainManager:
 
             for batch in train_dataloader:
                 self.distributed_train_batch(batch, self.alpha > 0, training=True)
-                for k, v in self.train_metrics.items():
-                    print(f"{k}: {v.result()}")
-                print()
-
                 self._write_on_tensorboard_train()
                 self.train_global_step += 1
 
@@ -122,11 +118,9 @@ class TrainManager:
                 self._write_on_tensorboard_valid()
                 self.valid_global_step += 1
 
-            self.model.save_weights(
-                os.path.join(model_save_dir), f"model_weight_{epoch+1: 02d}"
-            )
-
             self.alpha = max(0, self.alpha - self.d)
+
+        self.model.save_weights(os.path.join(model_save_dir), "model_weight.h5")
 
     def _write_on_tensorboard_train(self):
         if not self.use_tensorboard:
@@ -135,7 +129,6 @@ class TrainManager:
             for value in self.train_metrics.values():
                 tf.summary.scalar(value.name, value.result(), self.train_global_step)
                 value.reset_states()
-        # print("write_train")
 
     def _write_on_tensorboard_valid(self):
         if not self.use_tensorboard:
@@ -144,7 +137,6 @@ class TrainManager:
             for value in self.valid_metrics.values():
                 tf.summary.scalar(value.name, value.result(), self.valid_global_step)
                 value.reset_states()
-            # print("write_valid")
 
     @tf.function
     def distributed_train_batch(self, data, compute_auxiliary, training):
