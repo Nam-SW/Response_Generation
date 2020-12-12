@@ -1,6 +1,6 @@
 {
     "vocab_size": 8000,
-    "max_len": 100,
+    "max_len": 50,
     "utterance_size": 4,
     "embedding_size": 256,
     "hidden_size": 512,
