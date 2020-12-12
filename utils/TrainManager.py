@@ -1,5 +1,6 @@
 import os
 from datetime import datetime as dt
+from re import search
 from typing import Optional, Tuple
 
 import tensorflow as tf
@@ -29,7 +30,10 @@ class TrainManager:
         self.init_metrics()
 
     def set_loss(self):
-        def MLE_loss(y_true, y_pred):
+        def mle_loss(y_true, y_pred):
+            idx = y_true > 0
+            y_true = y_true[idx]
+            y_pred = y_pred[idx]
             loss = tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred)
             return tf.nn.compute_average_loss(
                 loss, global_batch_size=self.global_batch_size
@@ -46,7 +50,7 @@ class TrainManager:
                 loss, global_batch_size=self.global_batch_size
             )
 
-        self.MLE_loss = MLE_loss
+        self.MLE_loss = mle_loss
         self.MCR_loss = mcr_loss
 
     def init_metrics(self):
@@ -102,8 +106,18 @@ class TrainManager:
         model_save_prefix = os.path.join(model_save_dir, "ckpt")
 
         checkpoint = tf.train.Checkpoint(optimizer=self.optimizer, model=self.model)
+
         if load_latest:
-            checkpoint.restore(tf.train.latest_checkpoint(model_save_dir))
+            try:
+                checkpoint.restore(tf.train.latest_checkpoint(model_save_dir))
+                fn = sorted(os.listdir(model_save_dir))[-1]
+                lasted_step = int(search(r"\d+", fn).group()) * validation_step
+                self.train_global_step = lasted_step
+
+                print("Checkpoint loaded successfully.")
+                print(f"Starts from the last saved step {lasted_step}.")
+            except Exception:
+                print("Can not load latest checkpoint.")
 
         if tensorboard_log_dir:
             tensorboard_log_dir = os.path.abspath(tensorboard_log_dir)
@@ -111,12 +125,33 @@ class TrainManager:
             self.use_tensorboard = True
 
         # TODO: 테스트용 텍스트 생성 구현하기
-        # test_predict = test_tokenizer_config is not None
-        # if test_predict:
-        #     test_tokenizer_config = os.path.abspath(test_tokenizer_config)
-        #     tokenizer = load_tokenizer(test_tokenizer_config)
+        test_predict = test_tokenizer_config is not None
+        if test_predict:
+            test_tokenizer_config = os.path.abspath(test_tokenizer_config)
+            tokenizer = load_tokenizer(test_tokenizer_config)
 
-        print("Train Start")
+            cls_token = tokenizer.token_to_id("[CLS]")
+            sep_token = tokenizer.token_to_id("[SEP]")
+
+            for batch in test_dataloader:
+                mle = batch[0]
+                sample_context = mle[0][0][:1]  # 배치중 첫번째 샘플만
+                sample_y = mle[1][:1]  # 배치중 첫번째 샘플만
+
+                with open("predict_test.txt", "w", encoding="utf-8") as f:
+                    for i, c in enumerate(sample_context[0]):
+                        f.write(f"context{i+1}: {tokenizer.decode(c)}\n")
+                    f.write(f"\nresponse: {tokenizer.decode(sample_y[0])}\n\n\n")
+
+                break
+
+        print(
+            """Train Start.
+Learn {} steps, and save the model every {} step.
+and BatchPerEpoch is {}.""".format(
+                global_max_step, validation_step, BatchPerEpoch
+            )
+        )
         for batch in train_dataloader:
             # 학습
             self.distributed_train_batch(batch, self.alpha > 0, training=True)
@@ -141,6 +176,28 @@ class TrainManager:
                 )
                 # 모델 저장
                 checkpoint.save(model_save_prefix)
+
+                text_list = [cls_token]
+                last_predicted_word = None
+
+                while (
+                    last_predicted_word != sep_token
+                    and len(text_list) <= self.model.max_len
+                ):
+                    sample_response = tf.constant([text_list], dtype=tf.int32)
+                    last_predicted_word = int(
+                        tf.argmax(
+                            self.model((sample_context, sample_response))[0], axis=-1
+                        )
+                    )
+                    text_list.append(last_predicted_word)
+
+                with open("predict_test.txt", "a+", encoding="utf-8") as f:
+                    f.write(
+                        "predict_step_{}: {}\n\n".format(
+                            self.train_global_step + 1, tokenizer.decode(text_list)
+                        )
+                    )
 
             # 1회 배치가 끝나고, 파라미터 조정
             self.alpha = max(0, self.alpha - self.d)
