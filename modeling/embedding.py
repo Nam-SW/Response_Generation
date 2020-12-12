@@ -54,7 +54,12 @@ class Embedding(tf.keras.layers.Layer):
                 axis=-1,
             )
 
-        embedding = word_embedding + self.position_embedding + segment_embedding
+        input_len = get_shape(word_embedding)[1]
+        embedding = (
+            word_embedding
+            + self.position_embedding[:, :input_len, :]
+            + segment_embedding[:, :input_len, :]
+        )
         embedding = self.normalize(embedding)
         embedding = self.dropout(embedding)
 
