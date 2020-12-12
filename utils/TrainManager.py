@@ -118,30 +118,35 @@ class TrainManager:
 
         print("Train Start")
         for batch in train_dataloader:
+            # 학습
             self.distributed_train_batch(batch, self.alpha > 0, training=True)
             self._write_on_tensorboard_train()
 
+            # validation_step 개의 배치를 돌았으면
             if (self.train_global_step + 1) % validation_step == 0:
+                # validation
                 for batch in test_dataloader:
                     self.distributed_train_batch(batch, self.alpha > 0, training=False)
-                    break
 
-                # self.model.save_weights(os.path.join(model_save_dir), "model_weight.h5")
-
+                # 출력
                 if verbose:
                     print(f"{self.train_global_step + 1} Step")
                     for value in self.valid_metrics.values():
                         print(f"valid_{value.name}: {value.result(): .4f}", end="\t")
                     print("\n")
 
+                # 텐서보드 작성. 1000에포크 단위
                 self._write_on_tensorboard_valid(
                     self.train_global_step // validation_step
                 )
-
+                # 모델 저장
                 checkpoint.save(model_save_prefix)
+
+            # 1회 배치가 끝나고, 파라미터 조정
             self.alpha = max(0, self.alpha - self.d)
             self.train_global_step += 1
 
+            # 학습 끝
             if self.train_global_step > self.T1:
                 break
 
