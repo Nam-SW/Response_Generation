@@ -177,10 +177,10 @@ and BatchPerEpoch is {}.""".format(
                 # 모델 저장
                 checkpoint.save(model_save_prefix)
 
-                text_list = [cls_token]
-                last_predicted_word = None
-
                 if test_predict:
+                    text_list = [cls_token]
+                    last_predicted_word = None
+
                     while (
                         last_predicted_word != sep_token
                         and len(text_list) <= self.model.max_len
