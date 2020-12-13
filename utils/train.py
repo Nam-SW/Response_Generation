@@ -46,7 +46,7 @@ def train(args, model_hparams):
             train_dist_dataset,
             test_dist_dataset,
             strategy=strategy,
-            BatchPerEpoch=ceil(len(train_dataloader) / batch_size * gpu_count),
+            BatchPerEpoch=ceil(len(train_dataloader) / (batch_size * gpu_count)),
             model_save_dir=args.model_save_dir,
             tensorboard_log_dir=args.tensorboard_log_dir,
             # epochs=int(args.epochs),

@@ -180,24 +180,26 @@ and BatchPerEpoch is {}.""".format(
                 text_list = [cls_token]
                 last_predicted_word = None
 
-                while (
-                    last_predicted_word != sep_token
-                    and len(text_list) <= self.model.max_len
-                ):
-                    sample_response = tf.constant([text_list], dtype=tf.int32)
-                    last_predicted_word = int(
-                        tf.argmax(
-                            self.model((sample_context, sample_response))[0], axis=-1
+                if test_predict:
+                    while (
+                        last_predicted_word != sep_token
+                        and len(text_list) <= self.model.max_len
+                    ):
+                        sample_response = tf.constant([text_list], dtype=tf.int32)
+                        last_predicted_word = int(
+                            tf.argmax(
+                                self.model((sample_context, sample_response))[0],
+                                axis=-1,
+                            )
                         )
-                    )
-                    text_list.append(last_predicted_word)
+                        text_list.append(last_predicted_word)
 
-                with open("predict_test.txt", "a+", encoding="utf-8") as f:
-                    f.write(
-                        "predict_step_{}: {}\n\n".format(
-                            self.train_global_step + 1, tokenizer.decode(text_list)
+                    with open("predict_test.txt", "a+", encoding="utf-8") as f:
+                        f.write(
+                            "predict_step_{}: {}\n\n".format(
+                                self.train_global_step + 1, tokenizer.decode(text_list)
+                            )
                         )
-                    )
 
             # 1회 배치가 끝나고, 파라미터 조정
             self.alpha = max(0, self.alpha - self.d)
