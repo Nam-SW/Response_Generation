@@ -13,14 +13,26 @@ warnings.filterwarnings(action="ignore")
 tf.get_logger().setLevel("ERROR")
 tf.autograph.set_verbosity(3)
 
+gpus = tf.config.experimental.list_physical_devices("GPU")
+if gpus:
+    try:
+        tf.config.experimental.set_visible_devices(gpus[0], "GPU")
+    except RuntimeError as e:
+        print(e)
+
 
 if __name__ == "__main__":
     json_manager = JsonManager(__file__)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--cnt", default=5)
+    parser.add_argument("--gpu_num", default=0)
     args = parser.parse_args()
     cnt = int(args.cnt)
+    gpu_num = int(args.gpu_num)
+
+    gpus = tf.config.experimental.list_physical_devices("GPU")
+    tf.config.experimental.set_visible_devices(gpus[gpu_num], "GPU")
 
     tokenizer = load_tokenizer("config/tokenizer.json")
     cls_token = tokenizer.token_to_id("[CLS]")
