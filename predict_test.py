@@ -25,14 +25,14 @@ if __name__ == "__main__":
     json_manager = JsonManager(__file__)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cnt", default=5)
-    parser.add_argument("--gpu_num", default=0)
+    parser.add_argument("--cnt", type=int, default=5)
+    parser.add_argument("--gpu_num", type=int, default=0)
     args = parser.parse_args()
     cnt = int(args.cnt)
     gpu_num = int(args.gpu_num)
 
     gpus = tf.config.experimental.list_physical_devices("GPU")
-    tf.config.experimental.set_visible_devices(gpus[gpu_num], "GPU")
+    tf.config.experimental.set_visible_devices(gpus[args.gpu_num], "GPU")
 
     tokenizer = load_tokenizer("config/tokenizer.json")
     cls_token = tokenizer.token_to_id("[CLS]")
@@ -49,8 +49,8 @@ if __name__ == "__main__":
     checkpoint.restore(tf.train.latest_checkpoint("model"))
 
     for i, data in enumerate(dataloader):
-        print(i, cnt)
-        if i >= cnt:
+        print(i, args.cnt)
+        if i >= args.cnt:
             break
 
         mle = data[0]

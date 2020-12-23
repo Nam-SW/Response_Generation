@@ -175,21 +175,29 @@ def get_data(
 
     new_data.to_csv(fname, encoding="utf-8", index=None)
 
+    y_len = new_data["y"].apply(lambda x: len(x))
     context = np.transpose(
         [
             pad_sequences(
-                new_data[col].to_list(), max_len, truncating="post", padding="post"
+                # new_data[col].to_list(), max_len, truncating="post", padding="post"
+                new_data[col].to_list(),
+                max_len,
             )
             for col in new_data.columns[:utterance_size]
         ],
         axes=[1, 0, 2],
     )
+    context = np.repeat(context, y_len)
     response = pad_sequences(
-        new_data["response"].to_list(), max_len, truncating="post", padding="post"
+        # new_data["response"].to_list(), max_len, truncating="post", padding="post"
+        new_data["response"].to_list(),
+        max_len,
     )
-    y = pad_sequences(
-        new_data["y"].to_list(), max_len - 1, truncating="post", padding="post"
-    )
+    response = np.repeat(response, y_len)
+    # y = pad_sequences(
+    #     new_data["y"].to_list(), max_len - 1, truncating="post", padding="post"
+    # )
+    y = np.concatenate(new_data["y"].to_list())
 
     return context, response, y
 

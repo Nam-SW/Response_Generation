@@ -16,18 +16,18 @@ tf.autograph.set_verbosity(3)
 def train(args, model_hparams):
     # 파라미터
     gpus = tf.config.experimental.list_physical_devices("GPU")
-    gpu_count = max(min(int(args.gpu_count), len(gpus)), 1)
+    gpu_count = max(min(args.gpu_count, len(gpus)), 1)
     tf.config.experimental.set_visible_devices(gpus[:gpu_count], "GPU")
     gpus = [gpu.name.split(":", 1)[-1] for gpu in gpus]
-    batch_size = int(args.batch_size)
+    batch_size = args.batch_size
     strategy = tf.distribute.MirroredStrategy(gpus[:gpu_count])
 
     # 모델, 데이터셋 준비
     with strategy.scope():
         train_dataloader, test_dataloader = get_dataloader(
             args.data_dir,
-            float(args.validation_split),
-            (args.data_shuffle.lower()) == "true",
+            args.validation_split,
+            args.data_shuffle,
         )
 
         train_dist_dataset = strategy.experimental_distribute_dataset(
@@ -41,7 +41,7 @@ def train(args, model_hparams):
 
         # 학습
         trainer = TrainManager(model, gpu_count, batch_size)
-        trainer.compile(tf.keras.optimizers.Adagrad(float(args.learning_rate)))
+        trainer.compile(tf.keras.optimizers.Adagrad(args.learning_rate))
         trainer.train(
             train_dist_dataset,
             test_dist_dataset,
@@ -49,10 +49,9 @@ def train(args, model_hparams):
             BatchPerEpoch=ceil(len(train_dataloader) / (batch_size * gpu_count)),
             model_save_dir=args.model_save_dir,
             tensorboard_log_dir=args.tensorboard_log_dir,
-            # epochs=int(args.epochs),
-            global_max_step=int(args.global_max_step),
-            validation_step=int(args.validation_step),
-            verbose=int(args.verbose),
+            global_max_step=args.global_max_step,
+            validation_step=args.validation_step,
+            verbose=args.verbose,
             test_tokenizer_config=args.tokenizer,
-            load_latest=bool(args.load_latest.lower() == "true"),
+            load_latest=args.load_latest,
         )
