@@ -131,12 +131,13 @@ def _data_func(param):
     for i in range(len(data)):
         row = data.iloc[i]
         contexts = row[:4].to_list()
-        response = row[4][:-1]
-        y = row[4][1:]
-        line = contexts + [response, y]
-        new_data = new_data.append(
-            pd.Series(line, index=new_data.columns), ignore_index=True
-        )
+        for j in range(1, len(row[4])):
+            response = row[4][:j]
+            y = row[4][j]
+            line = contexts + [response, y]
+            new_data = new_data.append(
+                pd.Series(line, index=new_data.columns), ignore_index=True
+            )
 
     return new_data
 
@@ -175,7 +176,6 @@ def get_data(
 
     new_data.to_csv(fname, encoding="utf-8", index=None)
 
-    y_len = new_data["y"].apply(lambda x: len(x))
     context = np.transpose(
         [
             pad_sequences(
@@ -187,17 +187,15 @@ def get_data(
         ],
         axes=[1, 0, 2],
     )
-    context = np.repeat(context, y_len)
     response = pad_sequences(
         # new_data["response"].to_list(), max_len, truncating="post", padding="post"
         new_data["response"].to_list(),
         max_len,
     )
-    response = np.repeat(response, y_len)
     # y = pad_sequences(
     #     new_data["y"].to_list(), max_len - 1, truncating="post", padding="post"
     # )
-    y = np.concatenate(new_data["y"].to_list())
+    y = new_data["y"].to_numpy()
 
     return context, response, y
 
