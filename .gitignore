@@ -132,3 +132,4 @@ config/remove_names.json
 *.zip
 model/
 logs/
+predict_test.txt
