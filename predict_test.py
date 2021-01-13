@@ -49,7 +49,6 @@ if __name__ == "__main__":
     checkpoint.restore(tf.train.latest_checkpoint("model"))
 
     for i, data in enumerate(dataloader):
-        print(i, args.cnt)
         if i >= args.cnt:
             break
 
@@ -74,4 +73,5 @@ if __name__ == "__main__":
             )
             text_list.append(last_predicted_word)
 
+        print(f"predict:{text_list}")
         print(f"predict:{tokenizer.decode(text_list)}")
