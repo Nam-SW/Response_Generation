@@ -15,7 +15,7 @@ if __name__ == "__main__":
     parser.add_argument("--tokenizer_config")
     parser.add_argument("--utterance_size", type=int, default=4)
     parser.add_argument("--max_len", type=int, default=100)
-    parser.add_argument("--use_multiprocessing", type=bool, default=True)
+    parser.add_argument("--use_multiprocessing", type=str, default="True")
 
     args = parser.parse_args()
 
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     tokenizer_config = args.tokenizer_config
     utterance_size = args.utterance_size
     max_len = args.max_len
-    use_multiprocessing = args.use_multiprocessing
+    use_multiprocessing = args.use_multiprocessing.lower() == "true"
 
     setup_data(
         raw_data_dir,

@@ -4,8 +4,8 @@ from math import ceil
 import tensorflow as tf
 
 from dataloader import get_dataloader, get_tf_data
-from modeling.model import DialogWithAuxility
-from utils.TrainManager import TrainManager
+from modeling.model import DialogWithAuxility, Transformer
+from utils.TrainManager import TrainManager, CustomSchedule
 
 
 warnings.filterwarnings(action="ignore")
@@ -25,33 +25,40 @@ def train(args, model_hparams):
     # 모델, 데이터셋 준비
     with strategy.scope():
         train_dataloader, test_dataloader = get_dataloader(
-            args.data_dir,
-            args.validation_split,
-            args.data_shuffle,
+            args.data_path,
+            contexts_max_len=args.contexts_max_len,
+            response_max_len=args.response_max_len,
+            validation_split=args.validation_split,
+            shuffle=args.data_shuffle.lower() == "true",
         )
 
         train_dist_dataset = strategy.experimental_distribute_dataset(
-            get_tf_data(train_dataloader.load_data, gpu_count * batch_size)
+            get_tf_data(train_dataloader, gpu_count * batch_size)
         )
         test_dist_dataset = strategy.experimental_distribute_dataset(
-            get_tf_data(test_dataloader.load_data, gpu_count * batch_size, repeat=False)
+            get_tf_data(test_dataloader, gpu_count * batch_size, repeat=False)
         )
 
-        model = DialogWithAuxility(**model_hparams)
+        # model = DialogWithAuxility(**model_hparams)
+        model = Transformer(**model_hparams)
 
         # 학습
         trainer = TrainManager(model, gpu_count, batch_size)
-        trainer.compile(tf.keras.optimizers.Adagrad(args.learning_rate))
+        learning_rate = CustomSchedule(model.hidden_size, args.warmup_steps)
+        # learning_rate = args.learning_rate
+        trainer.compile(tf.keras.optimizers.Adagrad(learning_rate))
         trainer.train(
             train_dist_dataset,
             test_dist_dataset,
             strategy=strategy,
-            BatchPerEpoch=ceil(len(train_dataloader) / (batch_size * gpu_count)),
+            BatchPerEpoch=ceil(
+                len(train_dataloader) / (batch_size * gpu_count)
+            ),
             model_save_dir=args.model_save_dir,
             tensorboard_log_dir=args.tensorboard_log_dir,
             global_max_step=args.global_max_step,
             validation_step=args.validation_step,
             verbose=args.verbose,
             test_tokenizer_config=args.tokenizer,
-            load_latest=args.load_latest,
+            load_latest=args.load_latest.lower() == "true",
         )
