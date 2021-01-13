@@ -1,10 +1,14 @@
-from typing import Tuple
+from typing import Dict
 
 import tensorflow as tf
 
-from modeling.attention import Attention, SelfAttention
+from modeling.attention import (
+    AttentionBlock,
+    TransformerDecoder,
+    TransformerEncoder,
+)
 from modeling.embedding import Embedding
-from modeling.utils import get_shape, FFNN
+from modeling.utils import get_shape
 
 
 class DialogWithAuxility(tf.keras.Model):
@@ -31,10 +35,12 @@ class DialogWithAuxility(tf.keras.Model):
         self.encoder_block = encoder_block
         self.dropout_rate = dropout_rate
 
-        self.embedding = Embedding(self.vocab_size, self.embedding_size, self.max_len)
+        self.embedding = Embedding(
+            self.vocab_size, self.embedding_size, self.max_len
+        )
         self.dense = tf.keras.layers.Dense(self.hidden_size, use_bias=False)
-        self.attention_blocks = [
-            Attention(
+        self.encoder_blocks = [
+            AttentionBlock(
                 self.hidden_size,
                 self.attention_head,
                 self.dropout_rate,
@@ -43,16 +49,15 @@ class DialogWithAuxility(tf.keras.Model):
             for i in range(self.encoder_block)
         ]
         self.set_attention_mask = tf.keras.layers.Lambda(
-            lambda x: tf.dtypes.cast((x > 1), tf.float32)
+            lambda x: tf.dtypes.cast((x >= 1), tf.float32)
         )
-        self.decoder_attention = SelfAttention(self.attention_head, self.hidden_size)
+        self.decoder_block = AttentionBlock(
+            self.hidden_size,
+            self.attention_head,
+            self.dropout_rate,
+            name="decoder_block",
+        )
 
-        self.concat = tf.keras.layers.Concatenate(axis=1)
-
-        # self.FFNN_dense = tf.keras.layers.Dense(self.hidden_size, activation="linear")
-        # self.FFNN_dropout = tf.keras.layers.Dropout(self.dropout_rate)
-        # self.FFNN_normalize = tf.keras.layers.LayerNormalization()
-        self.FFNN = FFNN(self.hidden_size, self.dropout_rate)
         self.output_layer = tf.keras.layers.Dense(
             self.vocab_size, use_bias=False, activation="softmax"
         )
@@ -64,169 +69,214 @@ class DialogWithAuxility(tf.keras.Model):
             for i in range(self.utterance_size)
         ]
 
-    # def call_blocks(self, Input, blocks, mask=None, training=False):
-    def call_blocks(self, Input, blocks, mask=None):
-        if mask is None:
-            mask = tf.fill(get_shape(Input)[:-1], 1.0)
-        mask = (1.0 - mask[:, tf.newaxis, tf.newaxis, :]) * -10000.0
+    def call_encoder(
+        self, input_ids, token_type_ids, attention_mask, training=False
+    ):
+        embedding = self.embedding(input_ids, token_type_ids)
+        embedding = self.dense(embedding, training=training)
+
+        if attention_mask is None:
+            attention_mask = tf.fill(get_shape(input_ids), 1.0)
 
         result = None
-        for i, layer in enumerate(blocks):
+        for i, layer in enumerate(self.encoder_blocks):
             if result is None:
-                result, hidden_state = layer(Input, mask)
-                # result, hidden_state = layer(Input, mask, training=training)
+                result = layer(
+                    embedding, attention_mask=attention_mask, training=training
+                )
 
             else:
-                # result, hidden_state = layer(result, training=training)
-                result, hidden_state = layer(result)
+                result = layer(
+                    result, attention_mask=attention_mask, training=training
+                )
 
-        return (result, hidden_state)
-
-    def call_encoder(self, input_ids, token_type_ids, attention_blocks):
-        # def call_encoder(self, input_ids, token_type_ids, attention_blocks, training=False):
-        embedding = self.embedding(input_ids, token_type_ids)
-        embedding = self.dense(embedding)
-        masks = self.set_attention_mask(input_ids)
-        output = self.call_blocks(embedding, attention_blocks, masks)
-        # output = self.call_blocks(embedding, attention_blocks, masks, training=training)
-
-        return output
+        return result
 
     def call_word_order_recovery(
         self,
-        input_context,
-        # training=False
+        data: Dict,
+        training=False,
     ):
+        context_ids = data["context_ids"]
+        context_token_type_ids = data.get("context_token_type_ids", None)
+        context_attention_mask = data.get("context_attention_mask", None)
+
         encoder_output = self.call_encoder(
-            input_context,
-            None,
-            self.attention_blocks,
-            # training=training,
-        )[0]
+            context_ids,
+            context_token_type_ids,
+            self.set_attention_mask(context_ids)
+            if context_attention_mask is None
+            else context_attention_mask,
+            training=training,
+        )
         output = self.output_layer(encoder_output)
         return output
 
     def call_utterance_order_recovery(
         self,
-        input_contexts,
-        # training=False
+        data: Dict,
+        training=False,
     ):
         # TODO: implement
         return None
 
     def call_masked_content_recovery(
         self,
-        input_contexts,
-        # training=False,
+        data: Dict,
+        training=False,
     ):
-        batch_size = get_shape(input_contexts)[0]
+        context_ids = data["context_ids"]
+        context_token_type_ids = data.get("context_token_type_ids", None)
+        context_attention_mask = data.get("context_attention_mask", None)
 
-        contexts_token_type_ids = self.get_token_type_ids(batch_size)
-        encoder_output = [
+        batch_size = get_shape(context_ids)[0]
+
+        if context_token_type_ids is None:
+            context_token_type_ids = self.get_token_type_ids(batch_size)
+        context_encoder_output = [
             self.call_encoder(
-                input_contexts[:, i],
-                contexts_token_type_ids[i],
-                self.attention_blocks,
-                # training=training,
-            )[0]
+                context_ids[:, i],
+                context_token_type_ids[i],
+                self.set_attention_mask(context_ids[:, i])
+                if context_attention_mask is None
+                else context_ids[:, i],
+                training=training,
+            )
             for i in range(self.utterance_size)
         ]
-        E = tf.concat(encoder_output, axis=0)
+        E = tf.concat(context_encoder_output, axis=0)
 
-        output = self.output_layer(E)
+        output = self.output_layer(E, training=True)
         shape = [batch_size, -1] + list(output.shape[1:])
         return tf.reshape(output, shape)
 
-    def call_MLE(self, data, return_all_sequences=False):
-        (
-            input_contexts,
-            input_response,
-            # training,
-        ) = data
+    def call_MLE(self, data, training=False):
+        context_ids = data["context_ids"]
+        context_token_type_ids = data.get("context_token_type_ids", None)
+        context_attention_mask = data.get("context_attention_mask", None)
 
-        assert (
-            len(get_shape(input_contexts)) == 3
-        ), f"input ids ndim must be 3, but inputed {input_contexts.ndim} dim tensor."
-        assert (
-            get_shape(input_contexts)[1] == self.utterance_size
-        ), f"A total of {self.utterance_size} utterances must be entered."
+        response_ids = data.get("response_ids", None)
+        response_token_type_ids = data.get("response_token_type_ids", None)
+        response_attention_mask = data.get("response_attention_mask", None)
+        if response_attention_mask is None:
+            response_attention_mask = self.set_attention_mask(response_ids)
 
-        batch_size = get_shape(input_contexts)[0]
+        batch_size = get_shape(context_ids)[0]
 
         # call
-        contexts_token_type_ids = self.get_token_type_ids(batch_size)
-        contexts_encoder_outputs = [
+        if context_token_type_ids is None:
+            context_token_type_ids = self.get_token_type_ids(batch_size)
+        context_encoder_output = [
             self.call_encoder(
-                input_contexts[:, i],
-                contexts_token_type_ids[i],
-                self.attention_blocks,
-                # training=training,
-            )[0]
+                context_ids[:, i],
+                context_token_type_ids[i],
+                self.set_attention_mask(context_ids[:, i])
+                if context_attention_mask is None
+                else context_attention_mask,
+                training=training,
+            )
             for i in range(self.utterance_size)
         ]
         response_encoder_output = self.call_encoder(
-            input_response,
-            tf.fill((batch_size, self.max_len), 0),
-            self.attention_blocks,
-            # training=training,
-        )[0]
+            response_ids,
+            response_token_type_ids,
+            response_attention_mask,
+            training=training,
+        )
 
-        if return_all_sequences:
-            decoder_attention = []
-            for i in range(1, get_shape(response_encoder_output)[1]):
-                E = self.concat(
-                    contexts_encoder_outputs + [response_encoder_output[:, :i, :]]
-                )
-
-                temp = self.decoder_attention(
-                    response_encoder_output[:, i : i + 1, :],
-                    k=E,
-                    v=E,
-                    # training=training,
-                )[0]
-                decoder_attention.append(temp)
-            decoder_attention = self.concat(decoder_attention)
-
-        else:
-            E = self.concat(
-                contexts_encoder_outputs + [response_encoder_output[:, :-1, :]]
+        decoder_output = []
+        for i in range(get_shape(response_encoder_output)[1]):
+            E = tf.concat(
+                context_encoder_output
+                + [response_encoder_output[:, : i + 1, :]],
+                axis=1,
             )
 
-            decoder_attention = self.decoder_attention(
-                response_encoder_output[:, -1:, :],
+            temp = self.decoder_block(
+                response_encoder_output[:, i, tf.newaxis],
                 k=E,
                 v=E,
-                # training=training
-            )[0]
+                attention_mask=response_attention_mask[:, i, tf.newaxis],
+                training=training,
+            )
+            decoder_output.append(temp)
+        decoder_output = tf.concat(decoder_output, axis=1)
 
-        decoder_FFNN = self.FFNN(decoder_attention)
-        output = self.output_layer(decoder_FFNN)
+        output = self.output_layer(decoder_output)
 
         return output
 
-    def call(
-        self,
-        data: Tuple,
-        return_all_sequences=False,
-        task="MLE",
-        # task: Literal["MLE", "WOR", "UOR", "MCR"] = "MLE",
-    ):
+    def generate(self, data):
+        context_ids = data["context_ids"]
+        context_token_type_ids = data.get("context_token_type_ids", None)
+        context_attention_mask = data.get("context_attention_mask", None)
+
+        response_ids = data.get("response_ids", None)
+        response_token_type_ids = data.get("response_token_type_ids", None)
+        response_attention_mask = data.get("response_attention_mask", None)
+        if response_attention_mask is None:
+            response_attention_mask = self.set_attention_mask(response_ids)
+
+        batch_size = get_shape(context_ids)[0]
+
+        # call
+        if context_token_type_ids is None:
+            context_token_type_ids = self.get_token_type_ids(batch_size)
+        decoder_context_encoder_outputsoutput = [
+            self.call_encoder(
+                context_ids[:, i],
+                context_token_type_ids[i],
+                self.set_attention_mask(context_ids[:, i])
+                if context_attention_mask is None
+                else context_attention_mask,
+            )
+            for i in range(self.utterance_size)
+        ]
+        response_encoder_output = self.call_encoder(
+            response_ids,
+            response_token_type_ids,
+            response_attention_mask,
+        )
+
+        E = tf.concat(
+            decoder_context_encoder_outputsoutput
+            + [response_encoder_output[:, :-1, :]],
+            axis=1,
+        )
+        decoder_output = self.decoder_block(
+            response_encoder_output[:, -1, tf.newaxis, :],
+            k=E,
+            v=E,
+        )
+
+        output = self.output_layer(decoder_output)
+
+        return output
+
+    def call(self, data: Dict, task="GENERATE", training=False):
         assert task in [
             "MLE",
             "WOR",
             "UOR",
-            "MCR",
-        ], "task is Literal['MLE', 'WOR', 'UOR', 'MCR']"
+            "MWR",
+            "MUR",
+            "GENERATE",
+        ], "task is Literal['MLE', 'WOR', 'UOR', 'MWR', 'MUR', 'GENERATE']"
+
+        data = data["MLE"]
 
         if task == "MLE":
-            pred = self.call_MLE(data, return_all_sequences)
+            output = self.call_MLE(data, training=training)
         elif task == "WOR":
-            pred = self.call_word_order_recovery(data)
+            output = self.call_word_order_recovery(data, training=training)
         elif task == "UOR":
-            pred = self.call_utterance_order_recovery(data)
-        elif task == "MCR":
-            pred = self.call_masked_content_recovery(data)
-        return pred
+            output = None
+        elif task in ["MWR", "MUR"]:
+            output = self.call_masked_content_recovery(data, training=training)
+        elif task == "GENERATE":
+            output = self.generate(data)
+
+        return output
 
     def get_config(self):
         config = {
@@ -240,3 +290,109 @@ class DialogWithAuxility(tf.keras.Model):
             "dropout_rate": self.dropout_rate,
         }
         return config
+
+
+class Transformer(tf.keras.Model):
+    def __init__(
+        self,
+        vocab_size: int,
+        max_len: int,
+        utterance_size: int,
+        embedding_size: int,
+        hidden_size: int,
+        attention_head: int,
+        encoder_block: int,
+        dropout_rate: float,
+        **kwargs,
+    ):
+        super(Transformer, self).__init__(**kwargs)
+
+        self.vocab_size = vocab_size
+        self.max_len = max_len
+        self.utterance_size = utterance_size
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.attention_head = attention_head
+        self.encoder_block = encoder_block
+        self.dropout_rate = dropout_rate
+
+        self.embedding = Embedding(
+            self.vocab_size, self.hidden_size, self.max_len
+        )
+        self.encoders = [
+            TransformerEncoder(
+                self.hidden_size,
+                self.attention_head,
+                self.dropout_rate,
+                name=f"encoder_{i}",
+            )
+            for i in range(encoder_block)
+        ]
+        self.decoder = TransformerDecoder(
+            self.hidden_size, self.attention_head, self.dropout_rate
+        )
+        self.output_layer = tf.keras.layers.Dense(
+            self.vocab_size,
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(
+                stddev=0.02
+            ),
+            activation="softmax",
+        )
+
+    def create_padding_mask(self, x):
+        mask = tf.cast(tf.math.equal(x, 0), tf.float32)
+        return mask[:, tf.newaxis, tf.newaxis, :]
+
+    def create_look_ahead_mask(self, x):
+        seq_len = tf.shape(x)[1]
+        look_ahead_mask = 1 - tf.linalg.band_part(
+            tf.ones((seq_len, seq_len)), -1, 0
+        )
+        padding_mask = self.create_padding_mask(x)
+        return tf.maximum(look_ahead_mask, padding_mask)
+
+    def call(self, data, task="MLE", training=False):
+        assert task in [
+            "MLE",
+            "WOR",
+            "UOR",
+            "MWR",
+            "MUR",
+        ], "task is Literal['MLE', 'WOR', 'UOR', 'MWR', 'MUR']"
+
+        context_ids = data["context_ids"]
+        context_token_type_ids = data.get("context_token_type_ids", None)
+        context_attention_mask = self.create_padding_mask(context_ids)
+
+        context_embedding = self.embedding(context_ids, context_token_type_ids)
+        encoder_output = context_embedding
+        for layer in self.encoders:
+            encoder_output = layer(
+                encoder_output, context_attention_mask, training=training
+            )
+
+        if task == "MLE":
+            response_ids = data.get("response_ids", None)
+            response_token_type_ids = data.get("response_token_type_ids", None)
+            response_attention_mask = self.create_look_ahead_mask(response_ids)
+
+            response_embedding = self.embedding(
+                response_ids, response_token_type_ids
+            )
+            decoder_output = self.decoder(
+                response_embedding,
+                encoder_output,
+                padding_mask=context_attention_mask,
+                look_ahead_mask=response_attention_mask,
+                training=training,
+            )
+
+            output = self.output_layer(decoder_output)
+
+        elif task in ["WOR", "MWR", "MUR"]:
+            output = self.output_layer(encoder_output)
+
+        elif task == "UOR":  # TODO: implement
+            output = self.output_layer(encoder_output)
+
+        return output

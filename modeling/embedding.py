@@ -13,7 +13,7 @@ class Embedding(tf.keras.layers.Layer):
         self.max_len = max_len
         self.dropout_rate = dropout_rate
 
-        self.position_embedding = self.positional_encoding(self.max_len)
+        self.position_embedding = self.positional_encoding()
 
         self.word_embedding = self.add_weight(
             "weight",
@@ -21,40 +21,47 @@ class Embedding(tf.keras.layers.Layer):
             initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
         )
 
-        self.normalize = tf.keras.layers.LayerNormalization()
+        self.normalize = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
 
     def get_angles(self, pos, i):
-        angle_rates = 1 / np.power(
-            10000, (2 * (i // 2)) / np.float32(self.embedding_size)
+        angles = 1 / tf.pow(
+            10000, (2 * (i // 2)) / tf.cast(self.embedding_size, tf.float32)
         )
-        return pos * angle_rates
+        return pos * angles
 
-    def positional_encoding(self, max_len):
+    def positional_encoding(self):
         angle_rads = self.get_angles(
-            np.arange(max_len)[:, np.newaxis],
-            np.arange(self.embedding_size)[np.newaxis, :],
+            tf.range(self.vocab_size, dtype=tf.float32)[:, tf.newaxis],
+            tf.range(self.embedding_size, dtype=tf.float32)[tf.newaxis, :],
         )
 
-        angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
-        angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
+        sines = tf.math.sin(angle_rads[:, 0::2])
+        cosines = tf.math.cos(angle_rads[:, 1::2])
 
-        pos_encoding = angle_rads[np.newaxis, ...]
+        angle_rads = np.zeros(angle_rads.shape)
+        angle_rads[:, 0::2] = sines
+        angle_rads[:, 1::2] = cosines
+        pos_encoding = tf.constant(angle_rads)
 
-        return tf.cast(pos_encoding, dtype=tf.float32)
+        return tf.cast(pos_encoding[tf.newaxis, ...], dtype=tf.float32)
 
     def call(self, input_ids, token_type_ids=None):
         word_embedding = gather(self.word_embedding, input_ids)
+        word_embedding *= tf.math.sqrt(tf.cast(self.embedding_size, tf.float32))
         if token_type_ids is None:
             segment_embedding = tf.fill(get_shape(word_embedding), 0.0)
         else:
             segment_embedding = tf.repeat(
-                tf.cast(token_type_ids, dtype=word_embedding.dtype)[:, :, tf.newaxis],
+                tf.cast(token_type_ids, dtype=word_embedding.dtype)[
+                    :, :, tf.newaxis
+                ],
                 self.embedding_size,
                 axis=-1,
             )
 
         input_len = get_shape(word_embedding)[1]
+        # position_embedding = self.positional_encoding(input_len)
         embedding = (
             word_embedding
             + self.position_embedding[:, :input_len, :]
