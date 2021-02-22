@@ -8,7 +8,6 @@ class Attention(tf.keras.layers.Layer):
         self,
         num_attention_heads: int,
         hidden_size: int,
-        dropout_rate: float = 0.2,
     ):
         super().__init__()
 
@@ -18,36 +17,26 @@ class Attention(tf.keras.layers.Layer):
         self.num_attention_heads = num_attention_heads
         self.hidden_size = hidden_size
         self.attention_head_size = int(hidden_size / num_attention_heads)
-        self.dropout_rate = dropout_rate
 
         param_size = self.num_attention_heads * self.attention_head_size
         self.query = tf.keras.layers.Dense(
             param_size,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(
-                stddev=0.02
-            ),
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
             name="query",
         )
         self.key = tf.keras.layers.Dense(
             param_size,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(
-                stddev=0.02
-            ),
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
             name="key",
         )
         self.value = tf.keras.layers.Dense(
             param_size,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(
-                stddev=0.02
-            ),
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
             name="value",
         )
-        self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
         self.linear = tf.keras.layers.Dense(
             self.hidden_size,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(
-                stddev=0.02
-            ),
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
         )
 
     def transpose_for_scores(self, x, batch_size):
@@ -74,7 +63,7 @@ class Attention(tf.keras.layers.Layer):
         # scaled dot attention
         x = tf.matmul(query, key, transpose_b=True)
         dk = tf.cast(get_shape(key)[-1], x.dtype)
-        x /= tf.math.sqrt(dk)
+        x = x / tf.math.sqrt(dk)
 
         if attention_mask is not None:
             x += attention_mask * -1e9
@@ -88,11 +77,10 @@ class Attention(tf.keras.layers.Layer):
             (
                 batch_size,
                 -1,
-                self.num_attention_heads * self.attention_head_size,
+                self.hidden_size,
             ),
         )
         context = self.linear(context)
-        context = self.dropout(context, training=training)
 
         return context, attention_weights
 
@@ -102,7 +90,6 @@ class Attention(tf.keras.layers.Layer):
             {
                 "num_attention_heads": self.num_attention_heads,
                 "hidden_size": self.hidden_size,
-                "dropout_rate": self.dropout_rate,
             }
         )
         return config
@@ -123,11 +110,11 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self.dropout_rate = dropout_rate
 
         # Attention
-        self.selfattention = Attention(
-            self.num_attention_heads, self.hidden_size, self.dropout_rate
-        )
-        self.layernormal = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
+        self.selfattention = Attention(self.num_attention_heads, self.hidden_size)
+        self.norm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.norm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.dropout1 = tf.keras.layers.Dropout(self.dropout_rate)
+        self.dropout2 = tf.keras.layers.Dropout(self.dropout_rate)
 
         self.FFNN = tf.keras.models.Sequential(
             layers=[
@@ -148,16 +135,17 @@ class TransformerEncoder(tf.keras.layers.Layer):
         )
 
     def call(self, input_ids, attention_mask, training=False):
-        attention_outputs = self.selfattention(
+        attention_output = self.selfattention(
             input_ids, attention_mask=attention_mask, training=training
-        )
-        x = self.layernormal(attention_outputs[0] + input_ids)
+        )[0]
+        attention_output = self.dropout1(attention_output)
+        attention_output = self.norm1(attention_output + input_ids)
 
-        ffnn = self.FFNN(x)
-        ffnn = self.dropout(ffnn)
-        x = self.layernormal(x + ffnn)
+        output = self.FFNN(attention_output)
+        output = self.dropout2(output)
+        output = self.norm2(output + attention_output)
 
-        return x
+        return output
 
     def get_config(self):
         config = super().get_config().copy()
@@ -186,14 +174,14 @@ class TransformerDecoder(tf.keras.layers.Layer):
         self.dropout_rate = dropout_rate
 
         # Attention
-        self.attention1 = Attention(
-            self.num_attention_heads, self.hidden_size, self.dropout_rate
-        )
-        self.attention2 = Attention(
-            self.num_attention_heads, self.hidden_size, self.dropout_rate
-        )
-        self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
-        self.layernormal = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.attention1 = Attention(self.num_attention_heads, self.hidden_size)
+        self.attention2 = Attention(self.num_attention_heads, self.hidden_size)
+        self.norm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.norm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.norm3 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.dropout1 = tf.keras.layers.Dropout(self.dropout_rate)
+        self.dropout2 = tf.keras.layers.Dropout(self.dropout_rate)
+        self.dropout3 = tf.keras.layers.Dropout(self.dropout_rate)
 
         self.FFNN = tf.keras.models.Sequential(
             layers=[
@@ -223,23 +211,25 @@ class TransformerDecoder(tf.keras.layers.Layer):
     ):
         attention_outputs_1 = self.attention1(
             input_ids, attention_mask=look_ahead_mask, training=training
-        )
-        x = self.layernormal(attention_outputs_1[0] + input_ids)
+        )[0]
+        attention_outputs_1 = self.dropout1(attention_outputs_1)
+        attention_outputs_1 = self.norm1(attention_outputs_1 + input_ids)
 
         attention_outputs_2 = self.attention2(
-            x,
+            attention_outputs_1,
             k=encoder_output,
             v=encoder_output,
             attention_mask=padding_mask,
             training=training,
-        )
-        x = self.layernormal(attention_outputs_2[0] + input_ids)
+        )[0]
+        attention_outputs_2 = self.dropout2(attention_outputs_2)
+        attention_outputs_2 = self.norm2(attention_outputs_2 + attention_outputs_1)
 
-        ffnn = self.FFNN(x)
-        x = self.dropout(ffnn)
-        x = self.layernormal(x + ffnn)
+        output = self.FFNN(attention_outputs_2)
+        output = self.dropout3(output)
+        output = self.norm3(output + attention_outputs_2)
 
-        return x
+        return output
 
     def get_config(self):
         config = super().get_config().copy()
@@ -261,30 +251,22 @@ class AttentionBlock(tf.keras.layers.Layer):
         self.attention_head = attention_head
         self.dropout_rate = dropout_rate
 
-        self.attention = Attention(
-            self.attention_head, self.hidden_size, self.dropout_rate
-        )
+        self.attention = Attention(self.attention_head, self.hidden_size)
         self.dense1 = tf.keras.layers.Dense(
             self.hidden_size,
             activation="relu",
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(
-                stddev=0.02
-            ),
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
         )
         self.dense2 = tf.keras.layers.Dense(
             self.hidden_size,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(
-                stddev=0.02
-            ),
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
         )
 
     def call(self, q, k=None, v=None, attention_mask=None, training=False):
         k = q if k is None else k
         v = q if v is None else v
         if attention_mask is not None:
-            attention_mask = (
-                1.0 - attention_mask[:, tf.newaxis, tf.newaxis, :]
-            ) * -1e9
+            attention_mask = (1.0 - attention_mask[:, tf.newaxis, tf.newaxis, :]) * -1e9
 
         x = self.attention(
             q, k=k, v=v, attention_mask=attention_mask, training=training

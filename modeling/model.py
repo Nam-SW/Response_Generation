@@ -2,11 +2,7 @@ from typing import Dict
 
 import tensorflow as tf
 
-from modeling.attention import (
-    AttentionBlock,
-    TransformerDecoder,
-    TransformerEncoder,
-)
+from modeling.attention import AttentionBlock, TransformerDecoder, TransformerEncoder
 from modeling.embedding import Embedding
 from modeling.utils import get_shape
 
@@ -35,9 +31,7 @@ class DialogWithAuxility(tf.keras.Model):
         self.encoder_block = encoder_block
         self.dropout_rate = dropout_rate
 
-        self.embedding = Embedding(
-            self.vocab_size, self.embedding_size, self.max_len
-        )
+        self.embedding = Embedding(self.vocab_size, self.embedding_size, self.max_len)
         self.dense = tf.keras.layers.Dense(self.hidden_size, use_bias=False)
         self.encoder_blocks = [
             AttentionBlock(
@@ -69,9 +63,7 @@ class DialogWithAuxility(tf.keras.Model):
             for i in range(self.utterance_size)
         ]
 
-    def call_encoder(
-        self, input_ids, token_type_ids, attention_mask, training=False
-    ):
+    def call_encoder(self, input_ids, token_type_ids, attention_mask, training=False):
         embedding = self.embedding(input_ids, token_type_ids)
         embedding = self.dense(embedding, training=training)
 
@@ -86,9 +78,7 @@ class DialogWithAuxility(tf.keras.Model):
                 )
 
             else:
-                result = layer(
-                    result, attention_mask=attention_mask, training=training
-                )
+                result = layer(result, attention_mask=attention_mask, training=training)
 
         return result
 
@@ -187,8 +177,7 @@ class DialogWithAuxility(tf.keras.Model):
         decoder_output = []
         for i in range(get_shape(response_encoder_output)[1]):
             E = tf.concat(
-                context_encoder_output
-                + [response_encoder_output[:, : i + 1, :]],
+                context_encoder_output + [response_encoder_output[:, : i + 1, :]],
                 axis=1,
             )
 
@@ -301,7 +290,7 @@ class Transformer(tf.keras.Model):
         embedding_size: int,
         hidden_size: int,
         attention_head: int,
-        encoder_block: int,
+        block_size: int,
         dropout_rate: float,
         **kwargs,
     ):
@@ -313,12 +302,10 @@ class Transformer(tf.keras.Model):
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.attention_head = attention_head
-        self.encoder_block = encoder_block
+        self.block_size = block_size
         self.dropout_rate = dropout_rate
 
-        self.embedding = Embedding(
-            self.vocab_size, self.hidden_size, self.max_len
-        )
+        self.embedding = Embedding(self.vocab_size, self.hidden_size, self.max_len)
         self.encoders = [
             TransformerEncoder(
                 self.hidden_size,
@@ -326,16 +313,20 @@ class Transformer(tf.keras.Model):
                 self.dropout_rate,
                 name=f"encoder_{i}",
             )
-            for i in range(encoder_block)
+            for i in range(block_size)
         ]
-        self.decoder = TransformerDecoder(
-            self.hidden_size, self.attention_head, self.dropout_rate
-        )
+        self.decoders = [
+            TransformerDecoder(
+                self.hidden_size,
+                self.attention_head,
+                self.dropout_rate,
+                name=f"decoder_{i}",
+            )
+            for i in range(block_size)
+        ]
         self.output_layer = tf.keras.layers.Dense(
             self.vocab_size,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(
-                stddev=0.02
-            ),
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
             activation="softmax",
         )
 
@@ -345,9 +336,7 @@ class Transformer(tf.keras.Model):
 
     def create_look_ahead_mask(self, x):
         seq_len = tf.shape(x)[1]
-        look_ahead_mask = 1 - tf.linalg.band_part(
-            tf.ones((seq_len, seq_len)), -1, 0
-        )
+        look_ahead_mask = 1 - tf.linalg.band_part(tf.ones((seq_len, seq_len)), -1, 0)
         padding_mask = self.create_padding_mask(x)
         return tf.maximum(look_ahead_mask, padding_mask)
 
@@ -376,16 +365,16 @@ class Transformer(tf.keras.Model):
             response_token_type_ids = data.get("response_token_type_ids", None)
             response_attention_mask = self.create_look_ahead_mask(response_ids)
 
-            response_embedding = self.embedding(
-                response_ids, response_token_type_ids
-            )
-            decoder_output = self.decoder(
-                response_embedding,
-                encoder_output,
-                padding_mask=context_attention_mask,
-                look_ahead_mask=response_attention_mask,
-                training=training,
-            )
+            response_embedding = self.embedding(response_ids, response_token_type_ids)
+            decoder_output = response_embedding
+            for layer in self.decoders:
+                decoder_output = layer(
+                    response_embedding,
+                    encoder_output,
+                    padding_mask=context_attention_mask,
+                    look_ahead_mask=response_attention_mask,
+                    training=training,
+                )
 
             output = self.output_layer(decoder_output)
 

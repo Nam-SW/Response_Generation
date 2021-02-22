@@ -3,10 +3,9 @@ from multiprocessing import Pool, cpu_count
 from typing import List, Tuple
 
 import pandas as pd
-from tqdm import tqdm
-
-from utils.filtering import filtering
 from tokenizer import load_tokenizer
+from tqdm import tqdm
+from utils.filtering import filtering
 
 
 def preprocessing(df: pd.DataFrame, remove_names: List[str], tokenizer):
@@ -23,7 +22,7 @@ def preprocessing(df: pd.DataFrame, remove_names: List[str], tokenizer):
     df["contents"] = df["contents"].str.replace(r"^이모티콘 (?=\w+)", "")
     df["contents"] = df["contents"].apply(filtering)
     df["contents"] = df["contents"].str.replace(remove_names, "[NAME]")
-    df = df[df["contents"].str.len() >= 2]
+    # df = df[df["contents"].str.len() >= 2]
     df.reset_index(inplace=True, drop=True)
     df["ids"] = list(
         map(lambda x: x.ids, tokenizer.encode_batch(df["contents"].to_list()))
@@ -39,9 +38,7 @@ def save_data(params: Tuple[pd.DataFrame, int, str]):
     if filename and os.path.isfile(filename):
         df = pd.read_csv(filename, encoding="utf-8")
         for column in df.columns[:-1]:
-            df[column] = df[column].apply(
-                lambda s: list(map(int, s[1:-1].split(", ")))
-            )
+            df[column] = df[column].apply(lambda s: list(map(int, s[1:-1].split(", "))))
         return df
 
     data = pd.DataFrame(
@@ -54,9 +51,7 @@ def save_data(params: Tuple[pd.DataFrame, int, str]):
         "content": initial_content.copy(),
         "last_original": "",
         "writer": None,
-        "utterances": [
-            initial_content.copy() for _ in range(utterance_size + 1)
-        ],
+        "utterances": [initial_content.copy() for _ in range(utterance_size + 1)],
     }
     # for i in tqdm(range(len(df))):
     for i in range(len(df)):
@@ -84,9 +79,7 @@ def save_data(params: Tuple[pd.DataFrame, int, str]):
     temp_dict["utterances"].append(temp_dict["content"])
     temp_dict["utterances"] = temp_dict["utterances"][1:]
     line = temp_dict["utterances"] + [temp_dict["last_original"]]
-    data = data.append(
-        pd.Series(line, index=data.columns), ignore_index=True
-    )  # 추가
+    data = data.append(pd.Series(line, index=data.columns), ignore_index=True)  # 추가
 
     if filename:
         data.to_csv(filename, encoding="utf-8", index=None)
@@ -108,8 +101,7 @@ def get_preprocessed_data(
         if f.endswith(".csv")
     ]
     df_list = [
-        preprocessing(pd.read_csv(f), remove_names, tokenizer)
-        for f in raw_df_names
+        preprocessing(pd.read_csv(f), remove_names, tokenizer) for f in raw_df_names
     ]
 
     preprocess_df_names = [
@@ -138,8 +130,7 @@ def get_preprocessed_data(
 def _data_func(param):
     data, utterance_size = param
     new_data = pd.DataFrame(
-        columns=[f"context_{i+1}" for i in range(utterance_size)]
-        + ["response", "y"]
+        columns=[f"context_{i+1}" for i in range(utterance_size)] + ["response", "y"]
     )
 
     for i in tqdm(range(len(data))):
@@ -147,6 +138,8 @@ def _data_func(param):
         contexts = row[:4].to_list()
         response = row[4][:-1]
         y = row[4][1:]
+        if len(y) < 3:
+            continue
         line = contexts + [response, y]
         new_data = new_data.append(
             pd.Series(line, index=new_data.columns), ignore_index=True
@@ -223,7 +216,6 @@ def setup_data(
         tokenizer,
         use_multiprocessing,
     )
-    print(type(data_list[0].iloc[0, 0]))
 
     print("data setting")
     data = get_data(

@@ -3,9 +3,7 @@ from typing import List
 
 import pandas as pd
 from tokenizers import BertWordPieceTokenizer, Tokenizer
-
 from utils.filtering import filtering
-
 
 special_tokens = [
     "[PAD]",
@@ -81,7 +79,7 @@ def train_tokenizer(
     tokenizer.train(
         files=files,
         limit_alphabet=limit_alphabet,
-        vocab_size=limit_alphabet,
+        vocab_size=vocab_size,
         special_tokens=special_tokens,
     )
     filename = os.path.join(save_dir, "tokenizer.json")

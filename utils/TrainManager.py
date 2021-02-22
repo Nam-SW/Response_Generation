@@ -1,10 +1,11 @@
 import os
+from copy import deepcopy
 from datetime import datetime as dt
 from re import search
 from typing import Optional, Tuple
 
 import tensorflow as tf
-
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tokenizer import load_tokenizer
 
 
@@ -95,12 +96,8 @@ class TrainManager:
         train_log_dir = os.path.join(tensorboard_log_dir, current_time, "train")
         valid_log_dir = os.path.join(tensorboard_log_dir, current_time, "test")
 
-        self.train_summary_writter = tf.summary.create_file_writer(
-            train_log_dir
-        )
-        self.valid_summary_writter = tf.summary.create_file_writer(
-            valid_log_dir
-        )
+        self.train_summary_writter = tf.summary.create_file_writer(train_log_dir)
+        self.valid_summary_writter = tf.summary.create_file_writer(valid_log_dir)
 
     def train(
         self,
@@ -116,9 +113,7 @@ class TrainManager:
         test_tokenizer_config: Optional[str] = None,
         load_latest: bool = False,
     ):
-        assert (
-            self.optimizer is not None
-        ), "model must be compiled before training."
+        assert self.optimizer is not None, "model must be compiled before training."
 
         self.strategy = strategy
         self.init_training_hparams(BatchPerEpoch, global_max_step)
@@ -128,9 +123,7 @@ class TrainManager:
         model_save_dir = os.path.abspath(model_save_dir)
         model_save_prefix = os.path.join(model_save_dir, "ckpt")
 
-        checkpoint = tf.train.Checkpoint(
-            optimizer=self.optimizer, model=self.model
-        )
+        checkpoint = tf.train.Checkpoint(optimizer=self.optimizer, model=self.model)
 
         if load_latest:
             try:
@@ -168,18 +161,14 @@ class TrainManager:
                     f.write(
                         f"context: {tokenizer.decode(sample_data['context_ids'][0])}\n"
                     )
-                    f.write(
-                        f"\nresponse: {tokenizer.decode(sample_y[0])}\n\n\n"
-                    )
+                    f.write(f"\nresponse: {tokenizer.decode(sample_y[0])}\n\n\n")
 
                 break
 
         print(
-            """Train Start.
-Learn {} steps, and save the model every {} step.
-and BatchPerEpoch is {}.""".format(
-                global_max_step, validation_step, BatchPerEpoch
-            )
+            "Train Start.\n"
+            + f"Learn {global_max_step} steps, and save the model every {validation_step} step."
+            + f"and BatchPerEpoch is {BatchPerEpoch}."
         )
         for batch in train_dataloader:
             # 학습
@@ -190,9 +179,7 @@ and BatchPerEpoch is {}.""".format(
             if (self.train_global_step + 1) % validation_step == 0:
                 # validation
                 for batch in test_dataloader:
-                    self.distributed_train_batch(
-                        batch, self.alpha > 0, training=False
-                    )
+                    self.distributed_train_batch(batch, self.alpha > 0, training=False)
 
                 # 출력
                 if verbose:
@@ -259,9 +246,7 @@ and BatchPerEpoch is {}.""".format(
             return
         with self.train_summary_writter.as_default():
             for value in self.train_metrics.values():
-                tf.summary.scalar(
-                    value.name, value.result(), self.train_global_step
-                )
+                tf.summary.scalar(value.name, value.result(), self.train_global_step)
                 value.reset_states()
 
     def _write_on_tensorboard_valid(self, step):
@@ -296,43 +281,41 @@ and BatchPerEpoch is {}.""".format(
             # loss_dict = {task: 0 for task in ["WOR", "UOR", "MWR", "MUR"]}
             loss_dict = {task: 0 for task in ["WOR", "MWR", "MUR"]}
 
-            if compute_auxiliary:
-                for task in loss_dict.keys():
-                    task_data = data[task]
-                    pred = self.model(task_data, task=task, training=training)
-                    if task == "WOR":
-                        loss = self.MLE_loss(task_data["y"], pred)
-                    elif task in ["MWR", "MUR"]:
-                        loss = self.MCR_loss(
-                            task_data["context_ids"], task_data["y"], pred
-                        )
-                    elif task == "UOR":
-                        loss = 0  # TODO: implement
-                    loss_dict[task] = loss
+            # if compute_auxiliary:
+            #     for task in loss_dict.keys():
+            #         task_data = data[task]
+            #         pred = self.model(task_data, task=task, training=training)
+            #         if task == "WOR":
+            #             loss = self.MLE_loss(task_data["y"], pred)
+            #         elif task in ["MWR", "MUR"]:
+            #             loss = self.MCR_loss(
+            #                 task_data["context_ids"], task_data["y"], pred
+            #             )
+            #         elif task == "UOR":
+            #             loss = 0  # TODO: implement
+            #         loss_dict[task] = loss
 
-                auxiliary_loss += sum(loss_dict.values())
+            #     auxiliary_loss += sum(loss_dict.values())
 
             adversarial_loss = mle_loss + self.alpha * auxiliary_loss
 
         if training:
-            gradient = tape.gradient(
-                adversarial_loss, self.model.trainable_variables
-            )
+            gradient = tape.gradient(adversarial_loss, self.model.trainable_variables)
             self.optimizer.apply_gradients(
                 zip(gradient, self.model.trainable_variables)
             )
 
             self.train_metrics["adversarial_loss"](adversarial_loss)
             self.train_metrics["MLE_loss"](mle_loss)
-            self.train_metrics["Auxiliary_loss"](auxiliary_loss)
-            for task, loss in loss_dict.items():
-                self.train_metrics[f"{task}_loss"](loss)
+            # self.train_metrics["Auxiliary_loss"](auxiliary_loss)
+            # for task, loss in loss_dict.items():
+            #     self.train_metrics[f"{task}_loss"](loss)
 
         else:
             self.valid_metrics["adversarial_loss"](adversarial_loss)
             self.valid_metrics["MLE_loss"](mle_loss)
-            self.valid_metrics["Auxiliary_loss"](auxiliary_loss)
-            for task, loss in loss_dict.items():
-                self.valid_metrics[f"{task}_loss"](loss)
+            # self.valid_metrics["Auxiliary_loss"](auxiliary_loss)
+            # for task, loss in loss_dict.items():
+            #     self.valid_metrics[f"{task}_loss"](loss)
 
         return adversarial_loss
