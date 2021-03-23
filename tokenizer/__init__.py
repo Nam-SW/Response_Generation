@@ -2,7 +2,9 @@ import os
 from typing import List
 
 import pandas as pd
-from tokenizers import BertWordPieceTokenizer, Tokenizer
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.trainers import BpeTrainer
 from utils.filtering import filtering
 
 special_tokens = [
@@ -25,7 +27,7 @@ special_tokens = [
     "[UNK7]",
     "[UNK8]",
     "[UNK9]",
-] + [f"[unused{i}]" for i in range(100)]
+] + [f"[unused{i}]" for i in range(500)]
 
 
 def setup_tokenizer_train_data(data_dir: str, remove_names: List[str]):
@@ -46,11 +48,11 @@ def setup_tokenizer_train_data(data_dir: str, remove_names: List[str]):
     all_df = all_df[
         (all_df["contents"].str.len() < 70) & (all_df["contents"].str.len() >= 5)
     ]
+    all_df["contents"] = all_df["contents"].str.strip()
 
     filename = os.path.join(data_dir, "tokenizer_train_data.txt")
     with open(filename, "w", encoding="utf-8") as f:
-        for line in all_df["contents"]:
-            f.write(line.strip() + " \n")
+        f.write(" ".join(all_df["contents"]))
 
 
 def train_tokenizer(
@@ -65,23 +67,30 @@ def train_tokenizer(
 
     setup_tokenizer_train_data(data_dir, remove_names)
 
-    tokenizer = BertWordPieceTokenizer(
-        clean_text=True,
-        handle_chinese_chars=True,
-        strip_accents=False,  # Must be False if cased model
-        lowercase=False,
-        wordpieces_prefix="##",
-    )
+    tokenizer = Tokenizer(BPE())
+    # tokenizer = BertWordPieceTokenizer(
+    #     clean_text=True,
+    #     handle_chinese_chars=True,
+    #     strip_accents=False,  # Must be False if cased model
+    #     lowercase=False,
+    #     wordpieces_prefix="##",
+    # )
 
     files = [
         os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith(".txt")
     ]
-    tokenizer.train(
-        files=files,
-        limit_alphabet=limit_alphabet,
-        vocab_size=vocab_size,
+    # tokenizer.train(
+    #     files=files,
+    #     limit_alphabet=limit_alphabet,
+    #     special_tokens=special_tokens,
+    # )
+
+    trainer = BpeTrainer(
+        # vocab_size=vocab_size,
+        show_progress=True,
         special_tokens=special_tokens,
     )
+    tokenizer.train(files=files, trainer=trainer)
     filename = os.path.join(save_dir, "tokenizer.json")
     tokenizer.save(filename)
     print("tokenizer train and save at " + filename)
