@@ -1,3 +1,4 @@
+tokenizer/*
 config.yaml
 data.json
 remove_names.json
