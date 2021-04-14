@@ -1,2 +1,3 @@
-config/remove_names.json
-data/raw_data/*.csv
+config.yaml
+data.json
+remove_names.json
