@@ -1,7 +1,7 @@
+datasets==1.5.0
 soynlp==0.0.493
+tokenizers==0.10.2
 torch==1.8.1+cu111
 -f https://download.pytorch.org/whl/torch_stable.html
-tokenizers==0.10.2
-transformers==4.5.0
-datasets=1.5.0
 tqdm==4.41.1
+transformers==4.5.0
