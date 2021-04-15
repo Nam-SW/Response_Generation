@@ -57,6 +57,7 @@ def load(
 def main(cfg):
     # tokenizer 로드
     tokenizer = GPT2TokenizerFast.from_pretrained(cfg.PATH.tokenizer)
+    do_eval = cfg.PATH.eval_path is not None
 
     # 데이터 로드
     train_dataset = load(
@@ -64,10 +65,14 @@ def main(cfg):
         tokenizer=tokenizer,
         **cfg.PROCESSINGARGS,
     )
-    eval_dataset = load(
-        data_path=cfg.PATH.eval_path,
-        tokenizer=tokenizer,
-        **cfg.PROCESSINGARGS,
+    eval_dataset = (
+        load(
+            data_path=cfg.PATH.eval_path,
+            tokenizer=tokenizer,
+            **cfg.PROCESSINGARGS,
+        )
+        if do_eval
+        else None
     )
 
     # 모델 로드
@@ -76,7 +81,7 @@ def main(cfg):
     # 학습 arg 세팅
     args = TrainingArguments(
         do_train=True,
-        do_eval=True,
+        do_eval=do_eval,
         logging_dir=cfg.PATH.logging_dir,
         output_dir=cfg.PATH.checkpoint_dir,
         **cfg.TRAININGARGS,
@@ -105,16 +110,17 @@ def main(cfg):
     # 모델 저장
     trainer.save_model(cfg.PATH.output_dir)
 
-    # 검증 시작
-    metrics = trainer.evaluate()
+    if do_eval:
+        # 검증 시작
+        metrics = trainer.evaluate()
 
-    # 검증 결과 저장
-    metrics["eval_samples"] = len(eval_dataset)
-    perplexity = exp(metrics["eval_loss"])
-    metrics["perplexity"] = perplexity
+        # 검증 결과 저장
+        metrics["eval_samples"] = len(eval_dataset)
+        perplexity = exp(metrics["eval_loss"])
+        metrics["perplexity"] = perplexity
 
-    trainer.log_metrics("eval", metrics)
-    trainer.save_metrics("eval", metrics)
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
 
 if __name__ == "__main__":
