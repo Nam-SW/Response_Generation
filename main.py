@@ -57,7 +57,7 @@ def load(
 def main(cfg):
     # tokenizer 로드
     tokenizer = GPT2TokenizerFast.from_pretrained(cfg.PATH.tokenizer)
-    do_eval = cfg.PATH.eval_path is not None
+    do_eval = None if cfg.PATH.eval_path is None else True
 
     # 데이터 로드
     train_dataset = load(
