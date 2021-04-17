@@ -127,10 +127,14 @@ dmypy.json
 
 
 # custom
-data/
-config/remove_names.json
-*.zip
-model/
+checkpoint/
 logs/
-predict_test.txt
-call.txt
+model/
+models/
+outputs/
+config.yaml
+data.json
+remove_names.json
+*.zip
+tokenizer/*
+*.ipynb
