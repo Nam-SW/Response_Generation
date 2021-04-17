@@ -130,9 +130,11 @@ dmypy.json
 checkpoint/
 logs/
 model/
+models/
 outputs/
 config.yaml
 data.json
 remove_names.json
 *.zip
 tokenizer/*
+*.ipynb
