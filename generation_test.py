@@ -49,7 +49,7 @@ def main(cfg):
         model_output = tokenizer.decode(output[1:-1])
 
         # 모델 결과 출력
-        for utterance in model_output.split(" <sep> "):
+        for utterance in model_output.split("<sep>"):
             print(f"AI: {utterance}")
 
 
