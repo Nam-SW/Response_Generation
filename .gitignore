@@ -136,5 +136,5 @@ config.yaml
 data.json
 remove_names.json
 *.zip
-tokenizer/*
+tokenizer/
 *.ipynb
