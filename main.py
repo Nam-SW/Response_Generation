@@ -1,26 +1,11 @@
 import hydra
-from discord.ext import commands
-from transformers import GPT2TokenizerFast, TFAutoModelForCausalLM
+from discord.ext.commands import Bot
 
-bot = commands.Bot(command_prefix="")
+from classes import CashMannager, Predictor
 
-
-class ResponseManager(commands.Cog):
-    def __init__(self, bot_temp, tokenizer_name, model_name):
-        self.bot = bot_temp
-
-        self.tokenizer = GPT2TokenizerFast.from_pretrained(tokenizer_name)
-        self.model = TFAutoModelForCausalLM.from_pretrained(model_name, from_pt=True)
-
-    @commands.command(
-        hidden=False,
-        name="",
-        usage="",
-    )
-    async def response(self, message):
-        channel_id = message.channel.id
-
-        await message.channel.send("test")
+bot = Bot(command_prefix="")
+cash = None
+predictor = None
 
 
 @bot.event
@@ -28,8 +13,23 @@ async def on_ready():
     print(f"logged in as {bot.user}")
 
 
+@bot.event
+async def on_message(message):
+    if message.author.bot:  # 봇 무시 (본인 포함)
+        return
+
+    cash.add_message(message)
+
+    if message.content == "테스트":
+        await message.channel.send(cash.get_messages(message))
+
+
 @hydra.main(config_name="config.yaml")
 def main(cfg):
+    global cash, predictor
+    predictor = Predictor(cfg.DISCORD.tokenizer, cfg.DISCORD.model)
+    cash = CashMannager(predictor.tokenizer)
+
     bot.run(cfg.DISCORD.token)
 
 
