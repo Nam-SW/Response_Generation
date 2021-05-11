@@ -6,7 +6,7 @@ import hydra
 from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
-    GPT2TokenizerFast,
+    AutoTokenizer,
     Trainer,
     TrainingArguments,
     default_data_collator,
@@ -53,10 +53,10 @@ def load(
     return lm_datasets["train"]
 
 
-@hydra.main(config_name="config.yaml")
+@hydra.main(config_name="../config.yaml")
 def main(cfg):
     # tokenizer 로드
-    tokenizer = GPT2TokenizerFast.from_pretrained(cfg.PATH.tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.PATH.tokenizer)
     do_eval = None if cfg.PATH.eval_path is None else True
 
     # 데이터 로드
