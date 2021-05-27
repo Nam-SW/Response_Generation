@@ -50,7 +50,7 @@ def main(cfg):
 
         # 모델 결과 출력
         for utterance in model_output.split("<sep>"):
-            print(f"AI: {utterance}")
+            print(f"AI: {utterance.strip()}")
 
 
 if __name__ == "__main__":
