@@ -24,7 +24,7 @@ def load(
 ):
     def _tokenize_function(text):
         text[target_column] = [f"<s> {s} </s>" for s in text[target_column]]
-        tokenized = tokenizer()
+        tokenized = tokenizer(text[target_column])
         return tokenized
 
     def _group_texts(examples):
