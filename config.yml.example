@@ -1,0 +1,59 @@
+MODEL:
+    d_model: # int, hidden_size of model
+    num_heads: # int, attention head of model
+    num_encoder_layers: # int, encoder number of model
+    num_decoder_layers: # int, encoder number of model
+    pe: # int, maximum positional encoding of model
+    rate: # float, model dropdout rate
+
+TRAINARGS:
+    do_eval: # bool, do eval.
+    train_batch_size: # int, batch size per gpu
+    epochs: # int, training epochs
+    checkpoint_dir: # optional[str], checkpoint dir
+    save_epoch: # optional[int], checkpoint save epoch
+    save_total_limit: # optional[int], checkpoint save limit
+    logging_dir: # optional[str], tensorboard logging dir
+    logging_steps: # optional[int], logging step
+    logging_print: # optional[bool], logging on console
+    learning_rate: # float, training learning rate
+    warmup_steps: # int, learning rate warmup step
+    adam_beta1: 0.9
+    adam_beta2: 0.999 
+    adam_epsilon: 1e-8
+    weight_decay: 0.0
+    poly_power: 1.0
+    signature:
+        input_ids: 
+            shape: 
+                - null
+            type: int64
+        attention_mask: 
+            shape: 
+                - null
+            type: int64
+        decoder_input_ids: 
+            shape: 
+                - null
+            type: int64
+        decoder_padding_mask: 
+            shape: 
+                - null
+            type: int64
+        labels: 
+            shape: 
+                - null
+            type: int64
+
+ETC:
+    tokenizer_path: /mnt/subdisk/etc/RG_tokenizer
+    train_data_path: /mnt/subdisk/datasets/dialog_data_window_3.json
+#     train_data_path: /mnt/subdisk/datasets/test.json
+    eval_data_path: null
+    seq_len: 128
+    worker: 8
+    output_dir: /mnt/subdisk/models/Blenderbot
+    
+TEST:
+    tokenizer: /mnt/subdisk/etc/RG_tokenizer
+    model: /mnt/subdisk/models/Blenderbot
