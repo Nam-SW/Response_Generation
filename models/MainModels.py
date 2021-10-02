@@ -12,30 +12,39 @@ from models.UtilLayers import PositionalEmbedding
 class Transformer(tf.keras.Model):
     def __init__(
         self,
-        d_model: int,
+        embedding_size: int,
+        hidden_size: int,
         num_heads: int,
         num_encoder_layers: int,
         num_decoder_layers: int,
         vocab_size: int,
+        code_m: int,
         pe: int = 1000,
         rate: float = 0.1,
     ):
         super(Transformer, self).__init__()
 
-        self.d_model = d_model
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.num_encoder_layers = num_encoder_layers
         self.num_decoder_layers = num_decoder_layers
         self.vocab_size = vocab_size
+        self.code_m = code_m
         self.pe = pe
         self.rate = rate
 
-        self.embedding = PositionalEmbedding(vocab_size, d_model, pe)
+        self.embedding = PositionalEmbedding(vocab_size, embedding_size, pe)
+        if embedding_size != hidden_size:
+            self.embedding_intermediate = tf.keras.layers.Dense(hidden_size)
         self.encoders = [
-            EncoderLayer(d_model, num_heads, rate) for _ in range(num_encoder_layers)
+            EncoderLayer(hidden_size, num_heads, rate)
+            for _ in range(num_encoder_layers)
         ]
+        self.code_embedding = tf.keras.layers.Embedding(self.code_m, self.hidden_size)
         self.decoders = [
-            DecoderLayer(d_model, num_heads, rate) for _ in range(num_decoder_layers)
+            DecoderLayer(hidden_size, num_heads, rate)
+            for _ in range(num_decoder_layers)
         ]
 
         self.output_layer = tf.keras.layers.Dense(vocab_size, activation="linear")
@@ -63,14 +72,24 @@ class Transformer(tf.keras.Model):
 
         return tf.math.reduce_sum(loss) / tf.math.reduce_sum(mask)
 
+    def dot_attention(self, q, k, v, mask=None):
+        logits = tf.matmul(q, k, transpose_b=True)
+
+        if mask is not None:
+            logits += tf.cast((1 - mask[:, tf.newaxis, :]), tf.float32) * -1e9
+
+        attention_weights = tf.nn.softmax(logits, axis=-1)
+        output = tf.matmul(attention_weights, v)
+
+        return output
+
     def call(
         self,
         input_ids=None,
-        input_embed=None,
+        encoder_embed=None,
         decoder_input_ids=None,
-        decoder_input_embed=None,
         attention_mask=None,
-        decoder_padding_mask=None,
+        decoder_attention_mask=None,
         decoder_look_ahead_mask=None,
         training=False,
         labels=None,
@@ -78,43 +97,57 @@ class Transformer(tf.keras.Model):
     ):
         # check error
         assert (
-            input_ids is not None or input_embed is not None
-        ), "Either input_ids or input_embed must be required."
+            input_ids is not None or encoder_embed is not None
+        ), "Either input_ids or encoder_embed must be required."
         assert (
-            input_ids is None or input_embed is None
-        ), "Only one of input_ids and input_embed must be entered."
+            input_ids is None or encoder_embed is None
+        ), "Only one of input_ids and encoder_embed must be entered."
 
-        assert (
-            decoder_input_ids is not None or decoder_input_embed is not None
-        ), "Either decoder_input_ids or decoder_input_embed must be required."
-        assert (
-            decoder_input_ids is None or decoder_input_embed is None
-        ), "Only one of decoder_input_ids and decoder_input_embed must be entered."
-
-        # forward
+        # encoder
         if input_ids is not None:
-            encoder_output = self.embedding(input_ids)
-        elif input_embed is not None:
-            encoder_output = input_embed
+            window = input_ids.shape[1]
+            encoder_embeds = []
+            for i in range(window):
+                ids = input_ids[:, i, :]
+                mask = attention_mask[:, i, :]
 
-        for i in range(self.num_encoder_layers):
-            encoder_output = self.encoders[i](
-                encoder_output, attention_mask, training=training
+                output = self.embedding(ids)
+                if self.embedding_size != self.hidden_size:
+                    output = self.embedding_intermediate(output)
+
+                for i in range(self.num_encoder_layers):
+                    output = self.encoders[i](output, mask, training=training)
+
+                encoder_embeds.append(output)
+
+            encoder_embeds = tf.concat(encoder_embeds, axis=1)
+            attention_mask = tf.reshape(attention_mask, encoder_embeds.shape[:2])
+
+            codes = tf.range(self.code_m, dtype=tf.int32)
+            code_embeds = self.code_embedding(codes)
+
+            encoder_output = self.dot_attention(
+                code_embeds,
+                encoder_embeds,
+                encoder_embeds,
+                mask=attention_mask,
             )
+            attention_mask = tf.ones(encoder_output.shape[:-1])
 
+        elif encoder_embed is not None:
+            encoder_output = encoder_embed
+
+        # decoder
         decoder_output = self.embedding(decoder_input_ids)
-
-        if decoder_input_ids is not None:
-            decoder_output = self.embedding(decoder_input_ids)
-        elif decoder_input_embed is not None:
-            decoder_output = decoder_input_embed
+        if self.embedding_size != self.hidden_size:
+            decoder_output = self.embedding_intermediate(decoder_output)
 
         for i in range(self.num_decoder_layers):
             decoder_output = self.decoders[i](
                 decoder_output,
                 encoder_output,
                 decoder_look_ahead_mask,
-                decoder_padding_mask,
+                decoder_attention_mask,
                 training=training,
             )
 
@@ -127,11 +160,12 @@ class Transformer(tf.keras.Model):
 
     def get_config(self):
         return {
-            "d_model": self.d_model,
+            "hidden_size": self.hidden_size,
             "num_heads": self.num_heads,
             "num_encoder_layers": self.num_encoder_layers,
             "num_decoder_layers": self.num_decoder_layers,
             "vocab_size": self.vocab_size,
+            "code_m": self.code_m,
             "pe": self.pe,
             "rate": self.rate,
         }
