@@ -104,6 +104,9 @@ class Trainer:
         self.now_epoch = 0
 
         metrics = [metrics] if hasattr(metrics, "__call__") else metrics
+        for i in range(len(metrics)):
+            if not hasattr(metrics[i], "__name__"):
+                metrics[i].__name__ = metrics[i].__class__.__name__
 
         if isinstance(metrics, list) or isinstance(metrics, tuple):
             self.metrics_func = metrics
