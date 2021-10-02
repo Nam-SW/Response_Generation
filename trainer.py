@@ -169,15 +169,6 @@ class Trainer:
     def get_dataset(self, dataset, signature=None, batch_size=None):
         batch_size = batch_size if batch_size else self.args.train_global_batch_size
 
-        # dataset.set_format(type="tensorflow")
-        # features = {
-        #     k: tf.cast(
-        #         dataset[k].to_tensor(shape=signature[k].shape), dtype=signature[k].dtype
-        #     )
-        #     for k in dataset.column_names
-        # }
-        # dataset_tf = tf.data.Dataset.from_tensor_slices(features)
-
         def _gen():
             for data in dataset:
                 yield data
@@ -207,7 +198,6 @@ class Trainer:
     @tf.function
     def step(self, data, training=False):
         pred, loss = self.model(**data, training=training)
-        # loss = self.loss_function(data["labels"], pred)
         if self.metrics_func is not None:
             metrics = [m(data["labels"], pred) for m in self.metrics_func]
 
@@ -266,18 +256,18 @@ class Trainer:
 
                     if self.logging and global_step % self.args.logging_steps == 0:
                         log_dict = dict()
-                        tag = "/train"
+                        tag = "train/"
 
-                        log_dict["epoch" + tag] = global_step / step_per_epoch
+                        log_dict[tag + "epoch"] = global_step / step_per_epoch
                         if self.lr_scheduler is not None:
                             lr = self.lr_scheduler(global_step).numpy()
-                            log_dict["lr" + tag] = lr
+                            log_dict[tag + "lr"] = lr
 
-                        log_dict["loss" + tag] = self.loss.result()
+                        log_dict[tag + "loss"] = self.loss.result()
 
                         if self.metrics_func is not None:
                             for m in self.metrics:
-                                log_dict[m.name + tag] = m.result()
+                                log_dict[tag + m.name] = m.result()
 
                         self.log(log_dict, global_step)
 
@@ -299,7 +289,7 @@ class Trainer:
                     epoch_str = "0" * (str_len - len(epoch_str)) + epoch_str
                     self.save_checkpoint(epoch_str)
 
-                if self.do_eval and self.now_epoch % self.args.eval_epoch == 0:
+                if self.do_eval and (epoch + 1) % self.args.eval_epoch == 0:
                     self.eval(view_progress=False)
 
     def eval(self, dataset=None, signature=None, view_progress=True):
@@ -331,11 +321,11 @@ class Trainer:
                 if view_progress:
                     pbar.update(1)
 
-        tag = "/eval"
-        log_dict = {"loss" + tag: self.loss.result()}
+        tag = "eval/"
+        log_dict = {tag + "loss": self.loss.result()}
         if self.metrics_func is not None:
             for m in self.metrics:
-                log_dict[m.name + tag] = m.result()
+                log_dict[tag + m.name] = m.result()
 
         if self.logging:
             self.log(log_dict, self.now_epoch)
