@@ -27,7 +27,19 @@ def load(
         return sample
 
     def _grouping(sample):
+        def _padding(data):
+            return pad_sequences(
+                data,
+                seq_len,
+                padding="post",
+                truncating="post",
+            )
+    
+        bos = [tokenizer.bos_token_id]
+        eos = [tokenizer.eos_token_id]
+        
         input_ids = []
+        decoder_input_ids = []
         labels = []
 
         contents = [[] for _ in range(window - 1)] + sample["tokenized"]
@@ -46,40 +58,17 @@ def load(
                 now_talk_id = talk_id
                 continue
 
-            input_ids.append(contents[s:e])
-            labels.append(contents[e])
+            input_ids += contents[s:e]
+            decoder_input_ids.append(bos + contents[e])
+            labels.append(contents[e] + eos)
 
             s += 1
             e += 1
 
-        return {"input_ids": input_ids, "labels": labels}
-
-    def _padding_and_set_attention_mask(sample):
-        def _padding(data):
-            return pad_sequences(
-                data,
-                seq_len,
-                padding="post",
-                truncating="post",
-            )
-
-        input_ids = sum(sample["input_ids"], [])
-        input_ids = np.reshape(_padding(input_ids), (-1, window, seq_len))
-        attention_mask = (input_ids != 0).astype(np.int32)
-
-        decoder_input_ids = [[tokenizer.bos_token_id] + s for s in sample["labels"]]
-        decoder_input_ids = _padding(decoder_input_ids)
-        decoder_attention_mask = (decoder_input_ids != 0).astype(np.int32)
-
-        labels = [s + [tokenizer.eos_token_id] for s in sample["labels"]]
-        labels = _padding(labels)
-
         return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "decoder_input_ids": decoder_input_ids,
-            "decoder_attention_mask": decoder_attention_mask,
-            "labels": labels,
+            "input_ids": np.reshape(_padding(input_ids), (-1, window, seq_len)),
+            "decoder_input_ids": _padding(decoder_input_ids), 
+            "labels": _padding(labels),
         }
     
     train_data_path = abspath(train_data_path)
@@ -125,15 +114,7 @@ def load(
         num_proc=worker,
         remove_columns=data["train"].column_names,
     )
-    print('prouping')
-
-    data = data.map(
-        _padding_and_set_attention_mask,
-        batched=True,
-        batch_size=batch_size,
-        num_proc=worker,
-    )
-    print('padding')
+    print('grouping')
 
     if shuffle_seed:
         data = data.shuffle(seed=shuffle_seed)
@@ -141,14 +122,46 @@ def load(
     return data["train"], (data["test"] if is_eval else None)
 
 
-def create_look_ahead_mask_collator(data):
-    padding_mask = 1 - tf.cast(tf.equal(data["decoder_input_ids"], 0), tf.int32)
-    size = tf.shape(padding_mask)[-1]
+# def create_mask(batch):
+#     def _padding(data):
+#         return pad_sequences(
+#             data,
+#             128,
+#             padding="post",
+#             truncating="post",
+#         )
+    
+#     input_ids = sum(batch["input_ids"], [])
+#     input_ids = np.reshape(_padding(input_ids), (-1, 3, 128))
+#     attention_mask = (input_ids != 0).astype(np.int32)
+    
+#     decoder_input_ids = _padding(batch["decoder_input_ids"])
+    
+#     decoder_attention_mask = tf.cast(decoder_input_ids != 0, tf.int32)
+#     labels = _padding(batch["labels"])
+    
+#     return {
+#         "input_ids": input_ids,
+#         "attention_mask": attention_mask,
+#         "decoder_input_ids": decoder_input_ids,
+#         "decoder_look_ahead_mask": decoder_look_ahead_mask,
+#         "decoder_attention_mask": decoder_attention_mask,
+#         "labels": labels,
+#     }
 
-    look_ahead_mask = tf.linalg.band_part(tf.ones((size, size)), -1, 0)
 
+def create_mask(data):
+    attention_mask = 1 - tf.cast(tf.equal(data["input_ids"], 0), tf.int32)
+    decoder_attention_mask = 1 - tf.cast(tf.equal(data["decoder_input_ids"], 0), tf.int32)
+    
+    size = tf.shape(decoder_attention_mask)[-1]
+    t = tf.ones((size, size))
+    look_ahead_mask = tf.linalg.band_part(t, -1, 0)
+
+    data['attention_mask'] = attention_mask
+    data['decoder_attention_mask'] = decoder_attention_mask
     data["decoder_look_ahead_mask"] = tf.minimum(
-        padding_mask[:, tf.newaxis, tf.newaxis, :],
+        decoder_attention_mask[:, tf.newaxis, tf.newaxis, :],
         tf.cast(look_ahead_mask, tf.int32),
     )
     return data
