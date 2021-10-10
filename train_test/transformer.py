@@ -3,7 +3,7 @@ import re
 from dataloader.transformer import create_look_ahead_mask_collator, load
 from generator import Generator
 from models.MainModels import Transformer
-from soynlp.normalizer import repeat_normalize
+# from soynlp.normalizer import repeat_normalize
 from trainer import TrainArgument, Trainer
 from transformers import AutoTokenizer
 
@@ -19,7 +19,7 @@ def processing(text):
 
     text = text.replace("\n", " ").strip()
     text = re.sub(r" {2,}", r" ", text)
-    text = repeat_normalize(text, 8)
+#     text = repeat_normalize(text, 8)
     text = re.sub(r"(.{8,}?)\1+", r"\1", text)
     text = re.sub(r"[^ ㄱ-ㅎㅏ-ㅣ가-힣A-Za-z0-9~!@#$%\^\&*\(\)_+-=\[\]{},./<>?]", r"", text)
     text = re.sub(r"http.+", r"<url>", text)

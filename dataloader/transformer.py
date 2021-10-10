@@ -1,12 +1,14 @@
+from os import environ
 from os.path import abspath, splitext
 from typing import Optional
 
 import numpy as np
 import tensorflow as tf
-from datasets import load_dataset, logging
+from datasets import load_dataset, logging, set_caching_enabled
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
-logging.set_verbosity(logging.ERROR)
+
+logging.set_verbosity(logging.WARN)
 
 
 def load(
@@ -52,7 +54,7 @@ def load(
 
         return {"input_ids": input_ids, "labels": labels}
 
-    def padding_and_set_attention_mask(sample):
+    def _padding_and_set_attention_mask(sample):
         def _padding(data):
             return pad_sequences(
                 data,
@@ -72,12 +74,6 @@ def load(
         labels = [s + [tokenizer.eos_token_id] for s in sample["labels"]]
         labels = _padding(labels)
 
-        # print(input_ids.shape)
-        # print(attention_mask.shape)
-        # print(decoder_input_ids.shape)
-        # print(decoder_attention_mask.shape)
-        # print(labels.shape)
-
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
@@ -85,7 +81,7 @@ def load(
             "decoder_attention_mask": decoder_attention_mask,
             "labels": labels,
         }
-
+    
     train_data_path = abspath(train_data_path)
     is_eval = False
     _, extention = splitext(train_data_path)
@@ -112,6 +108,7 @@ def load(
     data = load_dataset(
         extention.replace(".", ""), data_files=datafiles, split=train_test_split
     )
+    print('load')
 
     data = data.map(
         _tokenize,
@@ -119,6 +116,7 @@ def load(
         batch_size=batch_size,
         num_proc=worker,
     )
+    print('tokenizer')
 
     data = data.map(
         _grouping,
@@ -127,13 +125,15 @@ def load(
         num_proc=worker,
         remove_columns=data["train"].column_names,
     )
+    print('prouping')
 
     data = data.map(
-        padding_and_set_attention_mask,
+        _padding_and_set_attention_mask,
         batched=True,
         batch_size=batch_size,
         num_proc=worker,
     )
+    print('padding')
 
     if shuffle_seed:
         data = data.shuffle(seed=shuffle_seed)

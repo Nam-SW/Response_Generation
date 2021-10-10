@@ -4,6 +4,7 @@ import sys
 import yaml
 from prodict import Prodict
 
+os.environ["HF_DATASETS_CACHE"] = "/mnt/subdisk/huggingface/datasets"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 from train_test import poly_encoder, transformer
@@ -17,7 +18,7 @@ def main():
         cfg = Prodict.from_dict(cfg)
 
     action, model_name = argv[1:]
-    model_name = model_name.replace("-", "_")
+    model_name = model_name.replace("-", "_").lower()
 
     if action == "train":
         if model_name == "poly_encoder":

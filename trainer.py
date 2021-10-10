@@ -103,6 +103,7 @@ class Trainer:
         self.loss = tf.keras.metrics.Mean(name="loss")
         self.now_epoch = 0
 
+        metrics = [] if metrics is None else metrics
         metrics = [metrics] if hasattr(metrics, "__call__") else metrics
         for i in range(len(metrics)):
             if not hasattr(metrics[i], "__name__"):
@@ -288,7 +289,7 @@ class Trainer:
 
                 if self.checkpoint and (epoch + 1) % self.args.save_epoch == 0:
                     str_len = len(str(self.args.epochs))
-                    epoch_str = str(epoch)
+                    epoch_str = str(epoch + 1)
                     epoch_str = "0" * (str_len - len(epoch_str)) + epoch_str
                     self.save_checkpoint(epoch_str)
 
