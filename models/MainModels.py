@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Dict
 
 import tensorflow as tf
 import transformers
@@ -21,6 +22,7 @@ class Transformer(tf.keras.Model):
         code_m: int,
         pe: int = 1000,
         rate: float = 0.1,
+        pre_ln: bool = True,
     ):
         super(Transformer, self).__init__()
 
@@ -33,44 +35,33 @@ class Transformer(tf.keras.Model):
         self.code_m = code_m
         self.pe = pe
         self.rate = rate
+        self.pre_ln = pre_ln
 
         self.embedding = PositionalEmbedding(vocab_size, embedding_size, pe)
         if embedding_size != hidden_size:
             self.embedding_intermediate = tf.keras.layers.Dense(hidden_size)
         self.encoders = [
-            EncoderLayer(hidden_size, num_heads, rate)
+            EncoderLayer(hidden_size, num_heads, rate, pre_ln)
             for _ in range(num_encoder_layers)
         ]
         self.code_embedding = tf.keras.layers.Embedding(self.code_m, self.hidden_size)
         self.decoders = [
-            DecoderLayer(hidden_size, num_heads, rate)
+            DecoderLayer(hidden_size, num_heads, rate, pre_ln)
             for _ in range(num_decoder_layers)
         ]
 
         self.output_layer = tf.keras.layers.Dense(vocab_size, activation="linear")
 
-    def loss(self, y, pred):
-        mask = tf.math.logical_not(tf.math.equal(y, 0))
+    def create_look_ahead_mask(self, padding_mask):
+        size = tf.shape(padding_mask)[-1]
 
-        reshaped_y = y[:, :, tf.newaxis]
-        batch = tf.broadcast_to(
-            tf.range(y.shape[0], dtype=y.dtype)[:, tf.newaxis, tf.newaxis],
-            reshaped_y.shape,
+        look_ahead_mask = tf.linalg.band_part(tf.ones((size, size)), -1, 0)
+
+        combine_mask = tf.minimum(
+            padding_mask[:, tf.newaxis, tf.newaxis, :],
+            tf.cast(look_ahead_mask, padding_mask.dtype),
         )
-        vocab = tf.broadcast_to(
-            tf.range(y.shape[1], dtype=y.dtype)[tf.newaxis, :, tf.newaxis],
-            reshaped_y.shape,
-        )
-
-        reshaped_y = tf.concat([batch, vocab, reshaped_y], axis=2)
-        pred = tf.gather_nd(tf.nn.softmax(pred, axis=-1), reshaped_y)
-
-        loss = tf.math.log(pred)
-        mask = tf.cast(mask, dtype=loss.dtype)
-
-        loss = -(tf.math.reduce_sum(loss * mask, axis=-1))
-
-        return tf.math.reduce_sum(loss) / tf.math.reduce_sum(mask)
+        return combine_mask
 
     def dot_attention(self, q, k, v, mask=None):
         logits = tf.matmul(q, k, transpose_b=True)
@@ -85,16 +76,15 @@ class Transformer(tf.keras.Model):
 
     def call(
         self,
-        input_ids=None,
-        encoder_embed=None,
-        decoder_input_ids=None,
-        attention_mask=None,
-        decoder_attention_mask=None,
-        decoder_look_ahead_mask=None,
+        inputs: Dict,
         training=False,
-        labels=None,
-        **kwargs,
     ):
+        input_ids = inputs.get("input_ids", None)
+        encoder_embed = inputs.get("encoder_embed", None)
+        decoder_input_ids = inputs.get("decoder_input_ids", None)
+        attention_mask = inputs.get("attention_mask", None)
+        decoder_attention_mask = inputs.get("decoder_attention_mask", None)
+
         # check error
         assert (
             input_ids is not None or encoder_embed is not None
@@ -102,6 +92,7 @@ class Transformer(tf.keras.Model):
         assert (
             input_ids is None or encoder_embed is None
         ), "Only one of input_ids and encoder_embed must be entered."
+        assert decoder_input_ids is not None, "deocder_input_ids must be required."
 
         # encoder
         if input_ids is not None:
@@ -109,7 +100,7 @@ class Transformer(tf.keras.Model):
             encoder_embeds = []
             for i in range(window):
                 ids = input_ids[:, i, :]
-                mask = attention_mask[:, i, :]
+                mask = attention_mask[:, i, :] if attention_mask is not None else None
 
                 output = self.embedding(ids)
                 if self.embedding_size != self.hidden_size:
@@ -121,7 +112,11 @@ class Transformer(tf.keras.Model):
                 encoder_embeds.append(output)
 
             encoder_embeds = tf.concat(encoder_embeds, axis=1)
-            attention_mask = tf.reshape(attention_mask, encoder_embeds.shape[:2])
+            attention_mask = (
+                tf.reshape(attention_mask, encoder_embeds.shape[:2])
+                if attention_mask is not None
+                else None
+            )
 
             codes = tf.range(self.code_m, dtype=tf.int32)
             code_embeds = self.code_embedding(codes)
@@ -142,24 +137,28 @@ class Transformer(tf.keras.Model):
         if self.embedding_size != self.hidden_size:
             decoder_output = self.embedding_intermediate(decoder_output)
 
+        decoder_attention_mask = (
+            None
+            if decoder_attention_mask is None
+            else self.create_look_ahead_mask(decoder_attention_mask)
+        )
+
         for i in range(self.num_decoder_layers):
             decoder_output = self.decoders[i](
                 decoder_output,
                 encoder_output,
-                decoder_look_ahead_mask,
                 decoder_attention_mask,
+                None,  # encoder output을 하나로 합치면서 의미가 없어짐
                 training=training,
             )
 
         output = self.output_layer(decoder_output)
 
-        if labels is not None:
-            return (output, self.loss(labels, output))
-        else:
-            return (output,)
+        return (output, encoder_output)
 
     def get_config(self):
         return {
+            "embedding_size": self.embedding_size,
             "hidden_size": self.hidden_size,
             "num_heads": self.num_heads,
             "num_encoder_layers": self.num_encoder_layers,
@@ -168,11 +167,14 @@ class Transformer(tf.keras.Model):
             "code_m": self.code_m,
             "pe": self.pe,
             "rate": self.rate,
+            "pre_ln": self.pre_ln,
         }
 
     def _get_sample_data(self):
         sample_data = {
-            "input_ids": tf.random.uniform((1, 8), 0, self.vocab_size, dtype=tf.int64),
+            "input_ids": tf.random.uniform(
+                (1, 1, 8), 0, self.vocab_size, dtype=tf.int64
+            ),
             "decoder_input_ids": tf.random.uniform(
                 (1, 1), 0, self.vocab_size, dtype=tf.int64
             ),
@@ -337,36 +339,36 @@ class PolyEncoder(tf.keras.Model):
             "rate": self.rate,
         }
 
-    def _get_sample_data(self):
-        sample_data = {
-            "context_input_ids": tf.random.uniform(
-                (1, 8), 0, self.model_config.vocab_size, dtype=tf.int64
-            ),
-            "candidate_input_ids": tf.random.uniform(
-                (1, 8), 0, self.model_config.vocab_size, dtype=tf.int64
-            ),
-        }
-        return sample_data
+    # def _get_sample_data(self):
+    #     sample_data = {
+    #         "context_input_ids": tf.random.uniform(
+    #             (1, 8), 0, self.model_config.vocab_size, dtype=tf.int64
+    #         ),
+    #         "candidate_input_ids": tf.random.uniform(
+    #             (1, 8), 0, self.model_config.vocab_size, dtype=tf.int64
+    #         ),
+    #     }
+    #     return sample_data
 
-    def save(self, save_dir):
-        if not os.path.isdir(save_dir):
-            os.mkdir(save_dir)
+    # def save(self, save_dir):
+    #     if not os.path.isdir(save_dir):
+    #         os.mkdir(save_dir)
 
-        with open(os.path.join(save_dir, "config.json"), "w") as f:
-            json.dump(self.get_config(), f)
+    #     with open(os.path.join(save_dir, "config.json"), "w") as f:
+    #         json.dump(self.get_config(), f)
 
-        self(**self._get_sample_data())
-        self.save_weights(os.path.join(save_dir, "model_weights.h5"))
+    #     self(**self._get_sample_data())
+    #     self.save_weights(os.path.join(save_dir, "model_weights.h5"))
 
-        return os.listdir(save_dir)
+    #     return os.listdir(save_dir)
 
-    @classmethod
-    def load(cls, save_dir):
-        with open(os.path.join(save_dir, "config.json"), "r") as f:
-            config = json.load(f)
+    # @classmethod
+    # def load(cls, save_dir):
+    #     with open(os.path.join(save_dir, "config.json"), "r") as f:
+    #         config = json.load(f)
 
-        model = cls(**config)
-        model(**model._get_sample_data())
-        model.load_weights(os.path.join(save_dir, "model_weights.h5"))
+    #     model = cls(**config)
+    #     model(**model._get_sample_data())
+    #     model.load_weights(os.path.join(save_dir, "model_weights.h5"))
 
-        return model
+    #     return model

@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 from datasets import load_dataset, logging
 
-logging.set_verbosity(logging.ERROR)
+logging.set_verbosity_warning()
 
 
 def load(

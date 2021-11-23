@@ -1,14 +1,33 @@
-from os import environ
 from os.path import abspath, splitext
 from typing import Optional
 
 import numpy as np
 import tensorflow as tf
-from datasets import load_dataset, logging, set_caching_enabled
+from datasets import load_dataset, logging
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
-
 logging.set_verbosity(logging.WARN)
+
+
+def to_tf_dataset(dataset):
+    signature = (
+        {
+            "input_ids": tf.TensorSpec(shape=None, dtype="int32"),
+            "decoder_input_ids": tf.TensorSpec(shape=None, dtype="int32"),
+        },
+        tf.TensorSpec(shape=None, dtype="int32"),
+    )
+
+    def _gen():
+        for batch in dataset:
+            y = batch.pop("labels")
+            yield batch, y
+
+    tf_dataset = tf.data.Dataset.from_generator(_gen, output_signature=signature)
+
+    tf_dataset = tf_dataset.apply(tf.data.experimental.assert_cardinality(len(dataset)))
+
+    return tf_dataset
 
 
 def load(
@@ -34,10 +53,10 @@ def load(
                 padding="post",
                 truncating="post",
             )
-    
+
         bos = [tokenizer.bos_token_id]
         eos = [tokenizer.eos_token_id]
-        
+
         input_ids = []
         decoder_input_ids = []
         labels = []
@@ -67,10 +86,10 @@ def load(
 
         return {
             "input_ids": np.reshape(_padding(input_ids), (-1, window, seq_len)),
-            "decoder_input_ids": _padding(decoder_input_ids), 
+            "decoder_input_ids": _padding(decoder_input_ids),
             "labels": _padding(labels),
         }
-    
+
     train_data_path = abspath(train_data_path)
     is_eval = False
     _, extention = splitext(train_data_path)
@@ -97,7 +116,6 @@ def load(
     data = load_dataset(
         extention.replace(".", ""), data_files=datafiles, split=train_test_split
     )
-    print('load')
 
     data = data.map(
         _tokenize,
@@ -105,7 +123,6 @@ def load(
         batch_size=batch_size,
         num_proc=worker,
     )
-    print('tokenizer')
 
     data = data.map(
         _grouping,
@@ -114,54 +131,19 @@ def load(
         num_proc=worker,
         remove_columns=data["train"].column_names,
     )
-    print('grouping')
 
     if shuffle_seed:
         data = data.shuffle(seed=shuffle_seed)
 
-    return data["train"], (data["test"] if is_eval else None)
-
-
-# def create_mask(batch):
-#     def _padding(data):
-#         return pad_sequences(
-#             data,
-#             128,
-#             padding="post",
-#             truncating="post",
-#         )
-    
-#     input_ids = sum(batch["input_ids"], [])
-#     input_ids = np.reshape(_padding(input_ids), (-1, 3, 128))
-#     attention_mask = (input_ids != 0).astype(np.int32)
-    
-#     decoder_input_ids = _padding(batch["decoder_input_ids"])
-    
-#     decoder_attention_mask = tf.cast(decoder_input_ids != 0, tf.int32)
-#     labels = _padding(batch["labels"])
-    
-#     return {
-#         "input_ids": input_ids,
-#         "attention_mask": attention_mask,
-#         "decoder_input_ids": decoder_input_ids,
-#         "decoder_look_ahead_mask": decoder_look_ahead_mask,
-#         "decoder_attention_mask": decoder_attention_mask,
-#         "labels": labels,
-#     }
-
-
-def create_mask(data):
-    attention_mask = 1 - tf.cast(tf.equal(data["input_ids"], 0), tf.int32)
-    decoder_attention_mask = 1 - tf.cast(tf.equal(data["decoder_input_ids"], 0), tf.int32)
-    
-    size = tf.shape(decoder_attention_mask)[-1]
-    t = tf.ones((size, size))
-    look_ahead_mask = tf.linalg.band_part(t, -1, 0)
-
-    data['attention_mask'] = attention_mask
-    data['decoder_attention_mask'] = decoder_attention_mask
-    data["decoder_look_ahead_mask"] = tf.minimum(
-        decoder_attention_mask[:, tf.newaxis, tf.newaxis, :],
-        tf.cast(look_ahead_mask, tf.int32),
+    return (
+        to_tf_dataset(data["train"]),
+        (to_tf_dataset(data["test"]) if is_eval else None),
     )
-    return data
+
+
+def create_mask(x, y):
+    x["attention_mask"] = tf.cast(tf.not_equal(x["input_ids"], 0), tf.int32)
+    x["decoder_attention_mask"] = tf.cast(
+        tf.not_equal(x["decoder_input_ids"], 0), tf.int32
+    )
+    return (x, y)

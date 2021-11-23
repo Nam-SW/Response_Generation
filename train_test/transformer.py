@@ -2,8 +2,9 @@ import re
 
 from dataloader.transformer import create_mask, load
 from generator import Generator
+from losses import mle_loss
 from models.MainModels import Transformer
-from trainer import TrainArgument, Trainer
+from tftrainer import TrainArgument, Trainer
 from transformers import AutoTokenizer
 
 
@@ -29,10 +30,9 @@ def processing(text):
 def train(cfg):
     cfg = cfg.TRANSFORMER
     tokenizer = AutoTokenizer.from_pretrained(cfg.ETC.tokenizer_path)
+    args = TrainArgument(**cfg.TRAINARGS)
 
     train_dataset, eval_dataset = load(tokenizer=tokenizer, **cfg.DATASETS)
-
-    args = TrainArgument(**cfg.TRAINARGS)
 
     with args.strategy.scope():
         model = Transformer(vocab_size=tokenizer.vocab_size, **cfg.MODEL)
@@ -41,6 +41,7 @@ def train(cfg):
         model,
         args,
         train_dataset,
+        loss_function=mle_loss,
         eval_dataset=eval_dataset,
         data_collator=create_mask,
     )
@@ -52,10 +53,13 @@ def train(cfg):
 
 def test(cfg):
     cfg = cfg.TRANSFORMER
-    tokenizer = AutoTokenizer.from_pretrained(cfg.TEST.tokenizer)
-    model = Transformer.load(cfg.TEST.model)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.ETC.tokenizer_path)
+    model = Transformer.load("/nas/ckpt/Transformer/epoch_10")
 
-    g = Generator(model, tokenizer)
+    user_token = "<user1>"
+    model_token_id = tokenizer.convert_tokens_to_ids("<user2>")
+
+    g = Generator(model, tokenizer, model_token=model_token_id)
 
     talk_log = []
 
@@ -69,12 +73,12 @@ def test(cfg):
                 exit()
             text_list.append(text)
 
-        text = processing(" ".join(text_list))
+        text = processing(user_token + " ".join(text_list))
         talk_log.append(text)
-        input_text = "<tsep>".join(talk_log[-3:])
+        input_text = talk_log[-3:]
 
-        pred = g.generate_greedy(input_text, temperature=1.5)
-        # pred = g.generate_random_sampling(input_text, temperature=1.5, top_k=5)
+        # pred = g.generate_greedy(input_text, temperature=1.5)
+        pred = g.generate_random_sampling(input_text, temperature=1.5, top_k=1)
         # pred = g.generate_beam(
         #     input_text=input_text,
         #     num_beams=3,

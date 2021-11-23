@@ -4,11 +4,12 @@ from models.UtilLayers import FFNN, MultiHeadAttention
 
 
 class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads, rate=0.1):
+    def __init__(self, d_model, num_heads, rate=0.1, pre_ln=True):
         super(EncoderLayer, self).__init__()
         self.d_model = d_model
         self.num_heads = num_heads
         self.rate = rate
+        self.pre_ln = pre_ln
 
         # multi-head attention
         self.mha_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -25,16 +26,24 @@ class EncoderLayer(tf.keras.layers.Layer):
         extended_mask = mask[:, tf.newaxis, tf.newaxis, :] if mask is not None else None
 
         # multi-head attention
-        mha_output = self.mha_norm(x, training=training)
-        mha_output, _ = self.mha(mha_output, mha_output, mha_output, extended_mask)
-        mha_output = self.mha_dropout(mha_output, training=training)
-        mha_output += x
+        if self.pre_ln:
+            mha_output, _ = self.mha(x, x, x, extended_mask)
+            mha_output = self.mha_norm(mha_output + x, training=training)
+            mha_output = self.mha_dropout(mha_output, training=training)
+        else:
+            mha_output = self.mha_norm(x, training=training)
+            mha_output, _ = self.mha(mha_output, mha_output, mha_output, extended_mask)
+            mha_output = self.mha_dropout(mha_output + x, training=training)
 
         # ffnn
-        ffnn_output = self.ffnn_norm(mha_output, training=training)
-        ffnn_output = self.ffnn(ffnn_output, training=training)
-        ffnn_output = self.ffnn_dropout(ffnn_output, training=training)
-        ffnn_output += mha_output
+        if self.pre_ln:
+            ffnn_output = self.ffnn(mha_output, training=training)
+            ffnn_output = self.ffnn_norm(ffnn_output + mha_output, training=training)
+            ffnn_output = self.ffnn_dropout(ffnn_output, training=training)
+        else:
+            ffnn_output = self.ffnn_norm(mha_output, training=training)
+            ffnn_output = self.ffnn(ffnn_output, training=training)
+            ffnn_output = self.ffnn_dropout(ffnn_output + mha_output, training=training)
 
         return ffnn_output
 
@@ -43,15 +52,17 @@ class EncoderLayer(tf.keras.layers.Layer):
             "d_model": self.d_model,
             "num_heads": self.num_heads,
             "rate": self.rate,
+            "pre_ln": self.pre_ln,
         }
 
 
 class DecoderLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads, rate=0.1):
+    def __init__(self, d_model, num_heads, rate=0.1, pre_ln=True):
         super(DecoderLayer, self).__init__()
         self.d_model = d_model
         self.num_heads = num_heads
         self.rate = rate
+        self.pre_ln = pre_ln
 
         # cross multi-head attention with encoder
         self.mha1_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -75,7 +86,6 @@ class DecoderLayer(tf.keras.layers.Layer):
         look_ahead_mask,
         padding_mask,
         training=False,
-        **kwargs,
     ):
         # extended_mask
         extended_look_ahead_mask = look_ahead_mask
@@ -87,26 +97,44 @@ class DecoderLayer(tf.keras.layers.Layer):
         )
 
         # cross multi-head attention with encoder
-        mha1_output = self.mha1_norm(x, training=training)
-        mha1_output, _ = self.mha1(
-            mha1_output, mha1_output, mha1_output, extended_look_ahead_mask
-        )
-        mha1_output = self.mha1_dropout(mha1_output, training=training)
-        mha1_output += x
+        if self.pre_ln:
+            mha1_output, _ = self.mha1(x, x, x, extended_look_ahead_mask)
+            mha1_output = self.mha1_norm(mha1_output + x, training=training)
+            mha1_output = self.mha1_dropout(mha1_output, training=training)
+        else:
+            mha1_output = self.mha1_norm(x, training=training)
+            mha1_output, _ = self.mha1(
+                mha1_output, mha1_output, mha1_output, extended_look_ahead_mask
+            )
+            mha1_output = self.mha1_dropout(mha1_output + x, training=training)
 
         # cross multi-head attention with encoder
-        mha2_output = self.mha1_norm(mha1_output, training=training)
-        mha2_output, _ = self.mha1(
-            mha2_output, enc_output, enc_output, extended_padding_mask
-        )
-        mha2_output = self.mha1_dropout(mha2_output, training=training)
-        mha2_output += mha1_output
+        if self.pre_ln:
+            mha2_output, _ = self.mha2(
+                mha1_output, enc_output, enc_output, extended_padding_mask
+            )
+            mha2_output = self.mha2_norm(mha2_output + mha1_output, training=training)
+            mha2_output = self.mha2_dropout(mha2_output, training=training)
+        else:
+            mha2_output = self.mha2_norm(mha1_output, training=training)
+            mha2_output, _ = self.mha2(
+                mha2_output, enc_output, enc_output, extended_padding_mask
+            )
+            mha2_output = self.mha2_dropout(
+                mha2_output + mha1_output, training=training
+            )
 
         # ffnn
-        ffnn_output = self.ffnn_norm(mha2_output, training=training)
-        ffnn_output = self.ffnn(ffnn_output, training=training)
-        ffnn_output = self.ffnn_dropout(ffnn_output, training=training)
-        ffnn_output += mha2_output
+        if self.pre_ln:
+            ffnn_output = self.ffnn(mha2_output, training=training)
+            ffnn_output = self.ffnn_norm(ffnn_output + mha2_output, training=training)
+            ffnn_output = self.ffnn_dropout(ffnn_output, training=training)
+        else:
+            ffnn_output = self.ffnn_norm(mha2_output, training=training)
+            ffnn_output = self.ffnn(ffnn_output, training=training)
+            ffnn_output = self.ffnn_dropout(
+                ffnn_output + mha2_output, training=training
+            )
 
         return ffnn_output
 
@@ -115,4 +143,5 @@ class DecoderLayer(tf.keras.layers.Layer):
             "d_model": self.d_model,
             "num_heads": self.num_heads,
             "rate": self.rate,
+            "pre_ln": self.pre_ln,
         }

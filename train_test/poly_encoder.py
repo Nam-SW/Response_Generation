@@ -1,6 +1,6 @@
 from dataloader.poly_ecoder import load
 from models.MainModels import PolyEncoder
-from trainer import TrainArgument, Trainer
+from tftrainer import TrainArgument, Trainer
 from transformers import AutoTokenizer
 
 

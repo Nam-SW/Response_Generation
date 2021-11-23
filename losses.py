@@ -2,24 +2,15 @@ import tensorflow as tf
 
 
 def mle_loss(y, pred):
-    mask = tf.math.logical_not(tf.math.equal(y, 0))
-
-    reshaped_y = y[:, :, tf.newaxis]
-    batch = tf.broadcast_to(
-        tf.range(y.shape[0], dtype=y.dtype)[:, tf.newaxis, tf.newaxis],
-        reshaped_y.shape,
+    pred = tf.nn.softmax(pred[0])
+    idx_except_last = tf.meshgrid(
+        *[tf.range(s) for s in pred.shape[:-1]], indexing="ij"
     )
-    vocab = tf.broadcast_to(
-        tf.range(y.shape[1], dtype=y.dtype)[tf.newaxis, :, tf.newaxis],
-        reshaped_y.shape,
-    )
+    idx = tf.stack(idx_except_last + [y], axis=-1)
+    pred_ = tf.gather_nd(pred, idx)
 
-    reshaped_y = tf.concat([batch, vocab, reshaped_y], axis=2)
-    pred = tf.gather_nd(tf.nn.softmax(pred, axis=-1), reshaped_y)
+    loss = tf.math.log(pred_)
+    mask = tf.cast(tf.math.not_equal(y, 0), dtype=loss.dtype)
 
-    loss = tf.math.log(pred)
-    mask = tf.cast(mask, dtype=loss.dtype)
-
-    loss = -(tf.math.reduce_sum(loss * mask, axis=-1))
-
-    return tf.math.reduce_sum(loss) / tf.math.reduce_sum(mask)
+    loss = -(loss * mask)
+    return tf.reduce_sum(loss) / tf.reduce_sum(mask)

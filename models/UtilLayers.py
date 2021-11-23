@@ -135,3 +135,14 @@ class FFNN(tf.keras.layers.Layer):
             "activation": self.activation,
             "rate": self.rate,
         }
+
+
+def shape_list(tensor):
+    dynamic = tf.shape(tensor)
+
+    if tensor.shape == tf.TensorShape(None):
+        return dynamic
+
+    static = tensor.shape.as_list()
+
+    return [dynamic[i] if s is None else s for i, s in enumerate(static)]
