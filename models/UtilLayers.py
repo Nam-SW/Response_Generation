@@ -15,15 +15,15 @@ class PositionalEmbedding(tf.keras.layers.Layer):
         self.embedding = tf.keras.layers.Embedding(self.vocab_size, self.embedding_size)
         self.dropout = tf.keras.layers.Dropout(self.rate)
 
-    def get_angles(self, pos, i, d_model):
-        angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
+    def get_angles(self, pos, i, hidden_size):
+        angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(hidden_size))
         return pos * angle_rates
 
-    def get_positional_encoding(self, position, d_model):
+    def get_positional_encoding(self, position, hidden_size):
         angle_rads = self.get_angles(
             np.arange(position)[:, np.newaxis],
-            np.arange(d_model)[np.newaxis, :],
-            d_model,
+            np.arange(hidden_size)[np.newaxis, :],
+            hidden_size,
         )
 
         angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
@@ -53,20 +53,20 @@ class PositionalEmbedding(tf.keras.layers.Layer):
 
 
 class MultiHeadAttention(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads):
+    def __init__(self, hidden_size, num_heads):
         super(MultiHeadAttention, self).__init__()
         self.num_heads = num_heads
-        self.d_model = d_model
+        self.hidden_size = hidden_size
 
-        assert d_model % self.num_heads == 0
+        assert hidden_size % self.num_heads == 0
 
-        self.depth = d_model // self.num_heads
+        self.depth = hidden_size // self.num_heads
 
-        self.wq = tf.keras.layers.Dense(d_model)
-        self.wk = tf.keras.layers.Dense(d_model)
-        self.wv = tf.keras.layers.Dense(d_model)
+        self.wq = tf.keras.layers.Dense(hidden_size)
+        self.wk = tf.keras.layers.Dense(hidden_size)
+        self.wv = tf.keras.layers.Dense(hidden_size)
 
-        self.dense = tf.keras.layers.Dense(d_model)
+        self.dense = tf.keras.layers.Dense(hidden_size)
 
     def split_heads(self, x, batch_size):
         x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
@@ -79,7 +79,7 @@ class MultiHeadAttention(tf.keras.layers.Layer):
         scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
 
         if mask is not None:
-            scaled_attention_logits += tf.cast((1 - mask), tf.float32) * -1e9
+            scaled_attention_logits += (tf.cast(1 - mask, tf.float32) * -1e9)
 
         attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
         output = tf.matmul(attention_weights, v)
@@ -97,7 +97,7 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
         logit = tf.transpose(logit, perm=[0, 2, 1, 3])
 
-        concat_attention = tf.reshape(logit, (batch_size, -1, self.d_model))
+        concat_attention = tf.reshape(logit, (batch_size, -1, self.hidden_size))
 
         output = self.dense(concat_attention)
 
@@ -106,21 +106,21 @@ class MultiHeadAttention(tf.keras.layers.Layer):
     def get_config(self):
         return {
             "num_,heads": self.num_heads,
-            "d_model": self.d_model,
+            "hidden_size": self.hidden_size,
         }
 
 
 class FFNN(tf.keras.layers.Layer):
-    def __init__(self, d_model, d_ff, activation, rate=0.1):
+    def __init__(self, hidden_size, d_ff, activation, rate=0.1):
         super(FFNN, self).__init__()
-        self.d_model = d_model
+        self.hidden_size = hidden_size
         self.d_ff = d_ff
         self.activation = activation
         self.rate = rate
 
         self.dense1 = tf.keras.layers.Dense(d_ff, activation=activation)
         self.dropout = tf.keras.layers.Dropout(rate)
-        self.dense2 = tf.keras.layers.Dense(d_model)
+        self.dense2 = tf.keras.layers.Dense(hidden_size)
 
     def call(self, x, training=False):
         x = self.dense1(x)
@@ -130,7 +130,7 @@ class FFNN(tf.keras.layers.Layer):
 
     def get_config(self):
         return {
-            "d_model": self.d_model,
+            "hidden_size": self.hidden_size,
             "d_ff": self.d_ff,
             "activation": self.activation,
             "rate": self.rate,

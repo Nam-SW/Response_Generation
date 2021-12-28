@@ -54,12 +54,12 @@ def train(cfg):
 def test(cfg):
     cfg = cfg.TRANSFORMER
     tokenizer = AutoTokenizer.from_pretrained(cfg.ETC.tokenizer_path)
-    model = Transformer.load("/nas/ckpt/Transformer/epoch_10")
+    model = Transformer.load(cfg.ETC.output_dir)
 
-    user_token = "<user1>"
-    model_token_id = tokenizer.convert_tokens_to_ids("<user2>")
+#     user_token = "<user1>"
+#     model_token_id = tokenizer.convert_tokens_to_ids("<user2>")
 
-    g = Generator(model, tokenizer, model_token=model_token_id)
+    g = Generator(model, tokenizer)
 
     talk_log = []
 
@@ -73,12 +73,12 @@ def test(cfg):
                 exit()
             text_list.append(text)
 
-        text = processing(user_token + " ".join(text_list))
+        text = processing(" ".join(text_list))
         talk_log.append(text)
         input_text = talk_log[-3:]
 
         # pred = g.generate_greedy(input_text, temperature=1.5)
-        pred = g.generate_random_sampling(input_text, temperature=1.5, top_k=1)
+        pred = g.generate_random_sampling(input_text, temperature=1.5, top_k=20)
         # pred = g.generate_beam(
         #     input_text=input_text,
         #     num_beams=3,

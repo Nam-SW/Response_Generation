@@ -7,13 +7,13 @@ class Generator:
         self,
         model,
         tokenizer,
-        model_token,
+#         model_token,
         model_max_len=128,
         window=3,
     ):
         self.model = model
         self.tokenizer = tokenizer
-        self.model_token = model_token
+#         self.model_token = model_token
         self.model_max_len = model_max_len
         self.window = window
 
@@ -33,13 +33,19 @@ class Generator:
         if input_text is not None:
             input_text = ["" for _ in range(self.window - len(input_text))] + input_text
 
-            input_ids = self.tokenizer(
+            input_ids = []
+            input_ids_temp = self.tokenizer(
                 input_text,
                 max_length=self.model_max_len,
-                padding="max_length",
+#                 padding="max_length",
                 truncation=True,
-                return_tensors="tf",
-            )["input_ids"][None, :, :]
+            )["input_ids"]
+            for ids in input_ids_temp:
+                if input_ids:
+                    input_ids.append(self.tokenizer.sep_token_id)
+                input_ids += ids
+            input_ids = tf.constant([input_ids[:self.model_max_len]], tf.int32)
+            
         elif input_ids is not None:
             input_ids = tf.constant(input_ids, dtype=tf.int32)
             if input_ids.ndim != 3:
@@ -48,7 +54,7 @@ class Generator:
                 )
 
         if decoder_ids is None:
-            decoder_ids = [self.tokenizer.bos_token_id, self.model_token]
+            decoder_ids = [self.tokenizer.bos_token_id]
 
         if isinstance(decoder_ids, np.ndarray):
             decoder_ids = decoder_ids.tolist()

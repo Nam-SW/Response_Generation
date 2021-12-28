@@ -6,7 +6,7 @@ import tensorflow as tf
 from datasets import load_dataset, logging
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
-logging.set_verbosity(logging.WARN)
+logging.set_verbosity(logging.ERROR)
 
 
 def to_tf_dataset(dataset):
@@ -41,9 +41,9 @@ def load(
     batch_size: int = 1000,
     shuffle_seed: Optional[int] = None,
 ):
-    def _tokenize(sample):
-        sample["tokenized"] = tokenizer(sample["content"])["input_ids"]
-        return sample
+#     def _tokenize(sample):
+#         sample["tokenized"] = tokenizer(sample["content"])["input_ids"]
+#         return sample
 
     def _grouping(sample):
         def _padding(data):
@@ -56,6 +56,7 @@ def load(
 
         bos = [tokenizer.bos_token_id]
         eos = [tokenizer.eos_token_id]
+        sample["tokenized"] = [s[1:] for s in sample["tokenized"]]
 
         input_ids = []
         decoder_input_ids = []
@@ -75,9 +76,15 @@ def load(
                 talk_ids = [talk_id for _ in range(window - 1)] + talk_ids[s + window :]
                 s, e = 0, window
                 now_talk_id = talk_id
-                continue
+                continue 
+            
+            input_id = []
+            for c in contents[s:e]:
+                if input_id:
+                    input_id.append(tokenizer.sep_token_id)
+                input_id += c[:seq_len // 2]
 
-            input_ids += contents[s:e]
+            input_ids.append(input_id)
             decoder_input_ids.append(bos + contents[e])
             labels.append(contents[e] + eos)
 
@@ -85,7 +92,7 @@ def load(
             e += 1
 
         return {
-            "input_ids": np.reshape(_padding(input_ids), (-1, window, seq_len)),
+            "input_ids": _padding(input_ids),
             "decoder_input_ids": _padding(decoder_input_ids),
             "labels": _padding(labels),
         }
@@ -117,12 +124,12 @@ def load(
         extention.replace(".", ""), data_files=datafiles, split=train_test_split
     )
 
-    data = data.map(
-        _tokenize,
-        batched=True,
-        batch_size=batch_size,
-        num_proc=worker,
-    )
+#     data = data.map(
+#         _tokenize,
+#         batched=True,
+#         batch_size=batch_size,
+#         num_proc=worker,
+#     )
 
     data = data.map(
         _grouping,

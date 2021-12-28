@@ -4,7 +4,7 @@ import sys
 import yaml
 from prodict import Prodict
 
-os.environ["HF_DATASETS_CACHE"] = "/home/nsw0311/nas_storage/huggingface/datasets"
+os.environ["HF_DATASETS_CACHE"] = "/mnt/subdisk/huggingface"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 os.environ["DATASETS_VERBOSITY"] = "error"
 

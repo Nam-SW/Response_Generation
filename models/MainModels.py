@@ -19,7 +19,7 @@ class Transformer(tf.keras.Model):
         num_encoder_layers: int,
         num_decoder_layers: int,
         vocab_size: int,
-        code_m: int,
+#         code_m: int,
         pe: int = 1000,
         rate: float = 0.1,
         pre_ln: bool = True,
@@ -32,7 +32,7 @@ class Transformer(tf.keras.Model):
         self.num_encoder_layers = num_encoder_layers
         self.num_decoder_layers = num_decoder_layers
         self.vocab_size = vocab_size
-        self.code_m = code_m
+#         self.code_m = code_m
         self.pe = pe
         self.rate = rate
         self.pre_ln = pre_ln
@@ -44,7 +44,7 @@ class Transformer(tf.keras.Model):
             EncoderLayer(hidden_size, num_heads, rate, pre_ln)
             for _ in range(num_encoder_layers)
         ]
-        self.code_embedding = tf.keras.layers.Embedding(self.code_m, self.hidden_size)
+#         self.code_embedding = tf.keras.layers.Embedding(self.code_m, self.hidden_size)
         self.decoders = [
             DecoderLayer(hidden_size, num_heads, rate, pre_ln)
             for _ in range(num_decoder_layers)
@@ -80,7 +80,7 @@ class Transformer(tf.keras.Model):
         training=False,
     ):
         input_ids = inputs.get("input_ids", None)
-        encoder_embed = inputs.get("encoder_embed", None)
+        encoder_embed = inputs.get("input_embed", None)
         decoder_input_ids = inputs.get("decoder_input_ids", None)
         attention_mask = inputs.get("attention_mask", None)
         decoder_attention_mask = inputs.get("decoder_attention_mask", None)
@@ -96,38 +96,44 @@ class Transformer(tf.keras.Model):
 
         # encoder
         if input_ids is not None:
-            window = input_ids.shape[1]
-            encoder_embeds = []
-            for i in range(window):
-                ids = input_ids[:, i, :]
-                mask = attention_mask[:, i, :] if attention_mask is not None else None
+            encoder_output = self.embedding(input_ids)
+            if self.embedding_size != self.hidden_size:
+                encoder_output = self.embedding_intermediate(encoder_output)
+                
+            for i in range(self.num_encoder_layers):
+                encoder_output = self.encoders[i](encoder_output, attention_mask, training=training)
+                
+#             window = input_ids.shape[1]
+#             encoder_embeds = []
+#             for i in range(window):
+#                 ids = input_ids[:, i, :]
+#                 mask = attention_mask[:, i, :] if attention_mask is not None else None
 
-                output = self.embedding(ids)
-                if self.embedding_size != self.hidden_size:
-                    output = self.embedding_intermediate(output)
+#                 output = self.embedding(ids)
+#                 if self.embedding_size != self.hidden_size:
+#                     output = self.embedding_intermediate(output)
 
-                for i in range(self.num_encoder_layers):
-                    output = self.encoders[i](output, mask, training=training)
+#                 for i in range(self.num_encoder_layers):
+#                     output = self.encoders[i](output, mask, training=training)
 
-                encoder_embeds.append(output)
+#                 encoder_embeds.append(output)
 
-            encoder_embeds = tf.concat(encoder_embeds, axis=1)
-            attention_mask = (
-                tf.reshape(attention_mask, encoder_embeds.shape[:2])
-                if attention_mask is not None
-                else None
-            )
+#             encoder_embeds = tf.concat(encoder_embeds, axis=1)
+#             attention_mask = (
+#                 tf.reshape(attention_mask, encoder_embeds.shape[:2])
+#                 if attention_mask is not None
+#                 else None
+#             )
 
-            codes = tf.range(self.code_m, dtype=tf.int32)
-            code_embeds = self.code_embedding(codes)
+#             codes = tf.range(self.code_m, dtype=tf.int32)
+#             code_embeds = self.code_embedding(codes)
 
-            encoder_output = self.dot_attention(
-                code_embeds,
-                encoder_embeds,
-                encoder_embeds,
-                mask=attention_mask,
-            )
-            attention_mask = tf.ones(encoder_output.shape[:-1])
+#             encoder_output = self.dot_attention(
+#                 code_embeds,
+#                 encoder_embeds,
+#                 encoder_embeds,
+#                 mask=attention_mask,
+#             )
 
         elif encoder_embed is not None:
             encoder_output = encoder_embed
@@ -148,7 +154,8 @@ class Transformer(tf.keras.Model):
                 decoder_output,
                 encoder_output,
                 decoder_attention_mask,
-                None,  # encoder output을 하나로 합치면서 의미가 없어짐
+                attention_mask,
+#                 None,  # encoder output을 하나로 합치면서 의미가 없어짐
                 training=training,
             )
 
@@ -164,7 +171,7 @@ class Transformer(tf.keras.Model):
             "num_encoder_layers": self.num_encoder_layers,
             "num_decoder_layers": self.num_decoder_layers,
             "vocab_size": self.vocab_size,
-            "code_m": self.code_m,
+#             "code_m": self.code_m,
             "pe": self.pe,
             "rate": self.rate,
             "pre_ln": self.pre_ln,
@@ -173,7 +180,7 @@ class Transformer(tf.keras.Model):
     def _get_sample_data(self):
         sample_data = {
             "input_ids": tf.random.uniform(
-                (1, 1, 8), 0, self.vocab_size, dtype=tf.int64
+                (1, 8), 0, self.vocab_size, dtype=tf.int64
             ),
             "decoder_input_ids": tf.random.uniform(
                 (1, 1), 0, self.vocab_size, dtype=tf.int64
@@ -188,7 +195,7 @@ class Transformer(tf.keras.Model):
         with open(os.path.join(save_dir, "config.json"), "w") as f:
             json.dump(self.get_config(), f)
 
-        self(**self._get_sample_data())
+        self(self._get_sample_data())
         self.save_weights(os.path.join(save_dir, "model_weights.h5"))
 
         return os.listdir(save_dir)
@@ -199,7 +206,7 @@ class Transformer(tf.keras.Model):
             config = json.load(f)
 
         model = cls(**config)
-        model(**model._get_sample_data())
+        model(model._get_sample_data())
         model.load_weights(os.path.join(save_dir, "model_weights.h5"))
 
         return model
